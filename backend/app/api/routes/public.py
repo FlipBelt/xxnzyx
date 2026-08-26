@@ -50,11 +50,11 @@ async def create_registration(payload: RegistrationCreate, session: DbSession) -
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="活动当前不可报名")
 
     name = payload.name.strip()
-    number_plate = payload.number_plate.strip().upper()
+    number_plate = payload.number_plate.strip()
     phone = normalize_phone(payload.phone)
     external_id = payload.external_id.strip()
-    if not phone:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="手机号格式不正确")
+    if len(phone) != 11:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="手机号必须为11位数字")
     if payload.channel in {"h5", "dingtalk"} and normalize_phone(external_id) != phone:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="H5身份需与报名手机号一致")
 
@@ -78,17 +78,26 @@ async def create_registration(payload: RegistrationCreate, session: DbSession) -
         participant = await session.get(Participant, identity.participant_id)
         assert participant is not None
 
-    duplicate = await session.scalar(
+    duplicate_identity = await session.scalar(
         select(Registration.id).where(
             Registration.activity_id == activity.id,
             (Registration.participant_id == participant.id)
-            | (Registration.phone_snapshot == phone)
-            | (Registration.number_plate == number_plate),
+            | (Registration.phone_snapshot == phone),
         )
     )
-    if duplicate is not None:
+    if duplicate_identity is not None:
         await session.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该身份、手机号或号码牌已报名")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该手机号已报名，可恢复原报名")
+
+    duplicate_plate = await session.scalar(
+        select(Registration.id).where(
+            Registration.activity_id == activity.id,
+            Registration.number_plate == number_plate,
+        )
+    )
+    if duplicate_plate is not None:
+        await session.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该号码牌已被使用")
 
     registration = Registration(
         activity_id=activity.id,

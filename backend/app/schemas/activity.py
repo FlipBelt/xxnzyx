@@ -11,7 +11,7 @@ class RegistrationCreate(BaseModel):
     channel: str = Field(pattern="^(wechat|h5|dingtalk)$")
     external_id: str = Field(min_length=1, max_length=160)
     name: str = Field(min_length=1, max_length=80)
-    phone: str = Field(min_length=6, max_length=32)
+    phone: str = Field(pattern=r"^\d{11}$")
     number_plate: str = Field(min_length=1, max_length=50)
 
 
@@ -19,7 +19,7 @@ class AdminRegistrationCreate(BaseModel):
     """现场补录使用，与普通报名共享同一份参赛数据。"""
 
     name: str = Field(min_length=1, max_length=80)
-    phone: str = Field(min_length=6, max_length=32)
+    phone: str = Field(pattern=r"^\d{11}$")
     number_plate: str = Field(min_length=1, max_length=50)
 
 

@@ -171,7 +171,7 @@ async def list_registrations(
         normalized = "".join(char for char in keyword if char.isdigit())
         query = query.where(
             (Registration.name_snapshot.contains(keyword.strip()))
-            | (Registration.number_plate.contains(keyword.strip().upper()))
+            | (Registration.number_plate.ilike(f"%{keyword.strip()}%"))
             | (Registration.phone_snapshot.contains(normalized or keyword.strip()))
         )
     rows = list((await session.execute(query)).scalars())
@@ -200,9 +200,9 @@ async def create_manual_registration(
     activity = await get_current_activity(session)
     name = payload.name.strip()
     phone = normalize_phone(payload.phone)
-    number_plate = payload.number_plate.strip().upper()
-    if not phone:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="手机号格式不正确")
+    number_plate = payload.number_plate.strip()
+    if len(phone) != 11:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="手机号必须为11位数字")
     duplicate = await session.scalar(
         select(Registration.id).where(
             Registration.activity_id == activity.id,
