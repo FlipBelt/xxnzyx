@@ -59,7 +59,26 @@
           <section class="panel"><header><div><h3>活动基本规则</h3><p>活动名称、状态和通用规则</p></div></header><el-form class="settings-form" label-position="top"><el-form-item label="活动名称"><el-input v-model="config.title" /></el-form-item><el-form-item label="活动状态"><el-select v-model="config.status"><el-option value="draft" label="草稿" /><el-option value="active" label="进行中" /><el-option value="ended" label="已结束" /></el-select></el-form-item><el-form-item label="挑战秒数"><el-input-number v-model="config.challenge_duration_seconds" :min="1" /></el-form-item><el-form-item label="每人挑战次数"><el-input-number v-model="config.challenge_limit" :min="1" /></el-form-item><el-form-item label="最终抽奖门槛"><el-input-number v-model="config.draw_threshold" :min="0" /></el-form-item><el-form-item class="full-span" label="规则文案"><el-input v-model="config.rules_text" type="textarea" :rows="4" /></el-form-item></el-form><el-button class="primary-button" @click="saveActivity">保存基本规则</el-button></section>
           <section class="panel"><header><div><h3>奖励区间</h3><p>分数区间必须从 0 分连续覆盖到最高分</p></div></header><el-table :data="config.reward_tiers"><el-table-column label="最低分"><template #default="scope"><el-input-number v-model="scope.row.min_score" :min="0" /></template></el-table-column><el-table-column label="最高分"><template #default="scope"><el-input-number v-model="scope.row.max_score" :min="0" placeholder="留空代表及以上" /></template></el-table-column><el-table-column label="等级"><template #default="scope"><el-input v-model="scope.row.title" /></template></el-table-column><el-table-column label="奖品"><template #default="scope"><el-input v-model="scope.row.prize_name" /></template></el-table-column></el-table><div class="section-actions spaced"><el-button class="secondary-button" @click="addTier">新增区间</el-button><el-button class="primary-button" @click="saveTiers">保存奖励区间</el-button></div></section>
           <section class="panel"><header><div><h3>计分道具</h3><p>每一行保存后会立即同步到成绩计算</p></div></header><el-table :data="config.score_items"><el-table-column prop="code" label="编码" width="145" /><el-table-column label="名称"><template #default="scope"><el-input v-model="scope.row.name" /></template></el-table-column><el-table-column label="分值" width="140"><template #default="scope"><el-input-number v-model="scope.row.points" :min="0" /></template></el-table-column><el-table-column label="上限" width="140"><template #default="scope"><el-input-number v-model="scope.row.max_quantity" :min="0" /></template></el-table-column><el-table-column label="操作" width="100"><template #default="scope"><el-button text class="table-action" @click="saveItem(scope.row)">保存</el-button></template></el-table-column></el-table></section>
-          <section class="panel"><header><div><h3>媒体素材</h3><p>可直接上传到已配置的 OSS，也可保留或手动填写外部地址。</p></div></header><el-table :data="config.media_assets"><el-table-column prop="kind" label="类型" width="150" /><el-table-column label="名称"><template #default="scope"><el-input v-model="scope.row.label" /></template></el-table-column><el-table-column label="地址"><template #default="scope"><el-input v-model="scope.row.url" /></template></el-table-column><el-table-column label="操作" width="160"><template #default="scope"><el-upload :show-file-list="false" :auto-upload="false" @change="uploadMedia(scope.row, $event.raw)"><el-button text class="table-action">上传 OSS</el-button></el-upload><el-button text class="table-action" @click="saveMedia(scope.row)">保存</el-button></template></el-table-column></el-table></section>
+          <section class="panel media-panel"><header><div><h3>移动端素材槽位</h3><p>素材保存在当前 ECS；新版视频和规则图上传后无需重新发布 H5。</p></div></header>
+            <el-alert title="视频与竖版规则图统一要求 1080×1920；视频必须为 MP4/H.264。旧素材会保留，但新版移动端只读取以下固定槽位。" type="info" :closable="false" show-icon />
+            <div class="media-slot-grid">
+              <article v-for="slot in mediaSlots" :key="slot.kind" class="media-slot-card">
+                <div class="media-slot-heading"><div><strong>{{ slot.label }}</strong><small>{{ slot.help }}</small></div><el-tag :type="slot.url ? 'success' : 'info'">{{ slot.url ? '已配置' : '待上传' }}</el-tag></div>
+                <div v-if="slot.type !== 'link'" class="media-preview">
+                  <video v-if="slot.type === 'video' && slot.url" :src="mediaPreviewUrl(slot.url)" controls preload="metadata" />
+                  <img v-else-if="slot.type === 'image' && slot.url" :src="mediaPreviewUrl(slot.url)" :alt="slot.label" />
+                  <span v-else>暂无素材</span>
+                </div>
+                <template v-if="slot.type === 'link'">
+                  <el-input v-model="slot.url" placeholder="https:// 开头的抖音官方分享链接" />
+                  <el-button class="primary-button" :loading="uploadingKind === slot.kind" @click="saveMedia(slot)">保存链接</el-button>
+                </template>
+                <el-upload v-else :show-file-list="false" :auto-upload="false" :accept="slot.accept" @change="uploadMedia(slot, $event.raw)">
+                  <el-button class="primary-button" :loading="uploadingKind === slot.kind">{{ slot.url ? '替换素材' : '上传素材' }}</el-button>
+                </el-upload>
+              </article>
+            </div>
+          </section>
         </template>
       </el-main>
     </el-container>
@@ -70,9 +89,21 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { Bell, EditPen, Odometer, Search, Setting, Trophy, UserFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { adminApi, type Activity, type Dashboard, type DrawResult, type Leaderboard, type Registration, type ScoreItem } from './services/api'
+import { adminApi, type Activity, type Dashboard, type DrawResult, type Leaderboard, type MediaAsset, type Registration, type ScoreItem } from './services/api'
+
+type MediaSlot = MediaAsset & { type: 'video' | 'image' | 'link'; accept?: string; help: string }
+
+const mediaSlotDefinitions: Array<Omit<MediaSlot, 'url' | 'object_key' | 'mime_type'>> = [
+  { kind: 'demo_video_portrait', label: '竖版挑战示范视频', type: 'video', accept: 'video/mp4', help: '1080×1920 · MP4/H.264 · 30fps' },
+  { kind: 'demo_video_poster_portrait', label: '竖版视频封面', type: 'image', accept: 'image/png,image/webp', help: '1080×1920 · PNG/WebP' },
+  { kind: 'challenge_rule_portrait', label: '竖版挑战规则图', type: 'image', accept: 'image/png,image/webp', help: '1080×1920 · PNG/WebP' },
+  { kind: 'score_reward_portrait', label: '竖版计分与奖励图', type: 'image', accept: 'image/png,image/webp', help: '1080×1920 · PNG/WebP' },
+  { kind: 'douyin_qr', label: '抖音平台码', type: 'image', accept: 'image/png,image/webp,image/jpeg', help: '用于无法直接打开抖音时扫码' },
+  { kind: 'douyin_open_link', label: '抖音官方分享链接', type: 'link', help: '配置后移动端显示“打开抖音关注”' },
+]
 
 const busy = ref(false), section = ref('dashboard'), dashboard = ref<Dashboard>(), config = ref<Activity>(), registrations = ref<Registration[]>([]), leaderboard = ref<Leaderboard>(), drawCandidates = ref<{ threshold: number; items: Array<{ registration_id: number; display_name: string; number_plate: string; score: number }> }>(), drawResult = ref<DrawResult>(), selectedRegistration = ref<Registration>(), keyword = ref(''), globalSearch = ref('')
+const mediaSlots = ref<MediaSlot[]>([]), uploadingKind = ref('')
 const scoreForm = reactive<Record<number, number>>({})
 const supplementForm = reactive({ name: '', phone: '', number_plate: '' })
 const heading = computed(() => ({ dashboard: '现场概况', supplement: '补录报名', score: '登记挑战成绩', ranking: '排行榜与抽奖', settings: '活动设置' }[section.value]))
@@ -90,7 +121,8 @@ const dashboardBars = computed(() => dashboard.value ? [
 ] : [])
 const scorePreview = computed(() => config.value?.score_items.reduce((sum, item) => sum + item.points * (scoreForm[item.id] || 0), 0) ?? 0)
 
-async function loadAll() { try { const [dash, loadedConfig, ranks, candidates] = await Promise.all([adminApi.dashboard(), adminApi.config(), adminApi.leaderboard(), adminApi.drawCandidates()]); dashboard.value = dash; config.value = loadedConfig; leaderboard.value = ranks; drawCandidates.value = candidates } catch (err) { ElMessage.error(err instanceof Error ? err.message : '数据加载失败') } }
+function syncMediaSlots(assets: MediaAsset[]) { mediaSlots.value = mediaSlotDefinitions.map((definition) => ({ ...definition, ...(assets.find((asset) => asset.kind === definition.kind) || { url: '' }) })) }
+async function loadAll() { try { const [dash, loadedConfig, ranks, candidates] = await Promise.all([adminApi.dashboard(), adminApi.config(), adminApi.leaderboard(), adminApi.drawCandidates()]); dashboard.value = dash; config.value = loadedConfig; syncMediaSlots(loadedConfig.media_assets); leaderboard.value = ranks; drawCandidates.value = candidates } catch (err) { ElMessage.error(err instanceof Error ? err.message : '数据加载失败') } }
 async function changeSection(value: string) { section.value = value; if (value === 'score') await searchRegistrations(); if (value === 'ranking') await loadAll() }
 async function searchFromTop() { keyword.value = globalSearch.value; await changeSection('score') }
 async function searchRegistrations() { try { registrations.value = (await adminApi.registrations(keyword.value)).items } catch (err) { ElMessage.error(err instanceof Error ? err.message : '查询失败') } }
@@ -102,7 +134,11 @@ async function saveActivity() { if (!config.value) return; try { config.value = 
 function addTier() { config.value?.reward_tiers.push({ min_score: 0, max_score: null, title: '新等级', prize_name: '待设置奖品', display_order: (config.value?.reward_tiers.length || 0) + 1 }) }
 async function saveTiers() { if (!config.value) return; try { config.value = await adminApi.updateTiers(config.value.reward_tiers); ElMessage.success('奖励区间已保存') } catch (err) { ElMessage.error(err instanceof Error ? err.message : '请检查奖励区间是否连续') } }
 async function saveItem(item: ScoreItem) { try { await adminApi.updateItem(item.id, item); ElMessage.success(`${item.name} 已保存`); await loadAll() } catch (err) { ElMessage.error(err instanceof Error ? err.message : '保存失败') } }
-async function saveMedia(media: { kind: string; label: string; url: string; mime_type?: string }) { try { await adminApi.updateMedia(media); ElMessage.success('媒体地址已保存') } catch (err) { ElMessage.error(err instanceof Error ? err.message : '保存失败') } }
-async function uploadMedia(media: { kind: string; label: string; url: string; mime_type?: string }, file?: File) { if (!file) return; try { const uploaded = await adminApi.uploadMedia(media, file); Object.assign(media, uploaded); ElMessage.success('素材已上传到 OSS 并同步到前台') } catch (err) { ElMessage.error(err instanceof Error ? err.message : '上传失败') } }
+function mediaPreviewUrl(url: string) { return url.startsWith('http') ? url : `/flipbelt-api${url}` }
+async function saveMedia(media: MediaSlot) { if (media.type === 'link' && (!media.url || !/^https:\/\//i.test(media.url))) { ElMessage.warning('请输入 https:// 开头的官方分享链接'); return }; uploadingKind.value = media.kind; try { await adminApi.updateMedia(media); ElMessage.success('素材配置已保存'); await loadAll() } catch (err) { ElMessage.error(err instanceof Error ? err.message : '保存失败') } finally { uploadingKind.value = '' } }
+function imageDimensions(file: File) { return new Promise<{ width: number; height: number }>((resolve, reject) => { const url = URL.createObjectURL(file); const image = new Image(); image.onload = () => { URL.revokeObjectURL(url); resolve({ width: image.naturalWidth, height: image.naturalHeight }) }; image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('无法读取图片尺寸')) }; image.src = url }) }
+function videoDimensions(file: File) { return new Promise<{ width: number; height: number }>((resolve, reject) => { const url = URL.createObjectURL(file); const video = document.createElement('video'); video.preload = 'metadata'; video.onloadedmetadata = () => { URL.revokeObjectURL(url); resolve({ width: video.videoWidth, height: video.videoHeight }) }; video.onerror = () => { URL.revokeObjectURL(url); reject(new Error('无法读取视频信息，请确认文件为 MP4/H.264')) }; video.src = url }) }
+async function validateMediaFile(media: MediaSlot, file: File) { if (media.type === 'video') { if (file.type !== 'video/mp4' && !file.name.toLowerCase().endsWith('.mp4')) throw new Error('视频必须为 MP4/H.264'); const size = await videoDimensions(file); if (size.width !== 1080 || size.height !== 1920) throw new Error(`视频尺寸为 ${size.width}×${size.height}，要求 1080×1920`) } else if (media.kind !== 'douyin_qr') { if (!['image/png', 'image/webp'].includes(file.type)) throw new Error('竖版图片必须为 PNG 或 WebP'); const size = await imageDimensions(file); if (size.width !== 1080 || size.height !== 1920) throw new Error(`图片尺寸为 ${size.width}×${size.height}，要求 1080×1920`) } }
+async function uploadMedia(media: MediaSlot, file?: File) { if (!file) return; uploadingKind.value = media.kind; try { await validateMediaFile(media, file); const uploaded = await adminApi.uploadMedia(media, file); Object.assign(media, uploaded); ElMessage.success('素材已保存到当前服务器并同步到前台'); await loadAll() } catch (err) { ElMessage.error(err instanceof Error ? err.message : '上传失败') } finally { uploadingKind.value = '' } }
 onMounted(() => { void loadAll() })
 </script>

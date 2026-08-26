@@ -477,7 +477,7 @@ async def upload_media_asset(
     except StorageConfigurationError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="媒体上传到对象存储失败") from exc
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="媒体存储失败") from exc
 
     media = await session.scalar(
         select(MediaAsset).where(MediaAsset.activity_id == activity.id, MediaAsset.kind == kind.strip())

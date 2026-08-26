@@ -46,7 +46,7 @@ export function hasAdminToken() { return Boolean(localStorage.getItem(TOKEN_KEY)
 export function clearAdminToken() { localStorage.removeItem(TOKEN_KEY) }
 export type ScoreItem = { id: number; code: string; name: string; points: number; max_quantity: number | null; is_required: boolean; is_hidden_bonus: boolean; appear_at_seconds_remaining: number | null; display_order?: number }
 export type RewardTier = { id?: number; min_score: number; max_score: number | null; title: string; prize_name: string; display_order?: number }
-export type MediaAsset = { kind: string; label: string; url: string; object_key?: string; mime_type?: string }
+export type MediaAsset = { kind: string; label: string; url: string; object_key?: string | null; mime_type?: string | null }
 export type Activity = { id: number; slug: string; title: string; description?: string; status: string; challenge_duration_seconds: number; challenge_limit: number; draw_threshold: number; leaderboard_name_mode: string; rules_text?: string; score_items: ScoreItem[]; reward_tiers: RewardTier[]; media_assets: MediaAsset[] }
 export type Dashboard = { activity: { id: number; title: string; status: string }; registered_count: number; scored_count: number; pending_score_count: number; draw_qualified_count: number; highest_score: number }
 export type Registration = { id: number; name: string; phone: string; number_plate: string; status: string; score: number | null }
