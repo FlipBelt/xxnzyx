@@ -1,0 +1,31 @@
+from app.models.domain import (
+    Activity,
+    ActivityConfigVersion,
+    AdminUser,
+    AuditLog,
+    ChallengeScore,
+    ChallengeScoreDetail,
+    DrawResult,
+    MediaAsset,
+    Participant,
+    ParticipantIdentity,
+    Registration,
+    RewardTier,
+    ScoreItem,
+)
+
+__all__ = [
+    "Activity",
+    "ActivityConfigVersion",
+    "AdminUser",
+    "AuditLog",
+    "ChallengeScore",
+    "ChallengeScoreDetail",
+    "DrawResult",
+    "MediaAsset",
+    "Participant",
+    "ParticipantIdentity",
+    "Registration",
+    "RewardTier",
+    "ScoreItem",
+]

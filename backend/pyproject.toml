@@ -1,0 +1,50 @@
+[project]
+name = "flipbelt-challenge-api"
+version = "0.1.0"
+description = "Backend API for the FLIPBELT 40-second packing challenge"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+  "alembic>=1.14,<2.0",
+  "alibabacloud-credentials>=1.0,<2.0",
+  "aiosqlite>=0.20,<1.0",
+  "fastapi>=0.115,<1.0",
+  "httpx>=0.28,<1.0",
+  "oss2>=2.19,<3.0",
+  "pwdlib[argon2]>=0.2,<1.0",
+  "pydantic-settings>=2.7,<3.0",
+  "python-multipart>=0.0.20,<1.0",
+  "psycopg[binary]>=3.2,<4.0",
+  "PyJWT>=2.10,<3.0",
+  "sqlalchemy>=2.0,<3.0",
+  "uvicorn[standard]>=0.34,<1.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3,<9.0",
+  "pytest-asyncio>=0.25,<1.0",
+  "ruff>=0.9,<1.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 140
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"app/api/routes/*.py" = ["B008"]

@@ -1,0 +1,14 @@
+{
+  "name": "flipbelt-challenge",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "dev:participant:h5": "pnpm --filter @flipbelt/participant dev:h5",
+    "dev:participant:weapp": "pnpm --filter @flipbelt/participant dev:weapp",
+    "dev:admin": "pnpm --filter @flipbelt/admin dev",
+    "build:participant:h5": "pnpm --filter @flipbelt/participant build:h5",
+    "build:participant:weapp": "pnpm --filter @flipbelt/participant build:weapp",
+    "build:admin": "pnpm --filter @flipbelt/admin build"
+  }
+}

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f0f0f5" />
+    <title>FLIPBELT 参赛流程 FP</title>
+    <link rel="stylesheet" href="./styles.css?v=20260820-card-stack-v3" />
+  </head>
+  <body>
+    <main class="preview-stage">
+      <section class="phone-shell" aria-label="FLIPBELT 参赛流程原型">
+        <header class="app-header">
+          <div class="brand"><span class="brand-mark">FB</span><span>FLIPBELT 挑战</span></div>
+          <button id="history-button" class="history-button" type="button" aria-expanded="false" aria-label="查看已完成步骤">
+            <span id="history-stack" class="history-stack" aria-hidden="true"></span>
+            <span class="history-label">已完成 <b id="done-count">0</b>/5</span>
+          </button>
+        </header>
+        <section class="app-title" aria-live="polite"><p id="step-caption">第 1 步 · 先完成关注</p><h1>40秒，装下你的本事！</h1></section>
+        <section id="deck" class="card-deck" aria-label="参赛步骤"></section>
+        <section id="history-panel" class="history-panel" aria-label="已完成步骤"></section>
+        <footer id="progress-dots" class="progress-dots" aria-label="流程进度"></footer>
+      </section>
+      <aside class="prototype-note"><span>FP 纯前端预览</span><p>上滑主卡，或点击卡片底部按钮查看下一步。</p></aside>
+    </main>
+    <script src="./app.js?v=20260820-card-stack-v3"></script>
+  </body>
+</html>

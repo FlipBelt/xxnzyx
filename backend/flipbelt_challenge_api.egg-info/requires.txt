@@ -1,0 +1,13 @@
+alembic<2.0,>=1.14
+alibabacloud-credentials<2.0,>=1.0
+aiosqlite<1.0,>=0.20
+fastapi<1.0,>=0.115
+httpx<1.0,>=0.28
+oss2<3.0,>=2.19
+pwdlib[argon2]<1.0,>=0.2
+pydantic-settings<3.0,>=2.7
+python-multipart<1.0,>=0.0.20
+psycopg[binary]<4.0,>=3.2
+PyJWT<3.0,>=2.10
+sqlalchemy<3.0,>=2.0
+uvicorn[standard]<1.0,>=0.34

@@ -1,0 +1,37 @@
+{
+  "name": "@flipbelt/participant",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev:h5": "taro build --type h5 --watch",
+    "build:h5": "taro build --type h5",
+    "dev:weapp": "taro build --type weapp --watch",
+    "build:weapp": "taro build --type weapp"
+  },
+  "dependencies": {
+    "@nutui/nutui-taro": "4.3.14",
+    "@tarojs/components": "4.2.1",
+    "@tarojs/helper": "4.2.1",
+    "@tarojs/plugin-framework-vue3": "4.2.1",
+    "@tarojs/runtime": "4.2.1",
+    "@tarojs/shared": "4.2.1",
+    "@tarojs/taro": "4.2.1",
+    "pinia": "2.3.1",
+    "vue": "3.5.16"
+  },
+  "devDependencies": {
+    "@tarojs/cli": "4.2.1",
+    "@tarojs/plugin-platform-h5": "4.2.1",
+    "@tarojs/plugin-platform-weapp": "4.2.1",
+    "@tarojs/webpack5-runner": "4.2.1",
+    "@vue/babel-plugin-jsx": "1.2.2",
+    "@vue/compiler-sfc": "3.5.16",
+    "@types/node": "22.15.3",
+    "babel-preset-taro": "4.2.1",
+    "less": "4.2.0",
+    "sass": "1.89.0",
+    "typescript": "5.8.3",
+    "vue-loader": "17.4.2",
+    "webpack": "5.91.0"
+  }
+}

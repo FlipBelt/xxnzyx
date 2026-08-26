@@ -1,0 +1,18 @@
+Metadata-Version: 2.4
+Name: flipbelt-challenge-api
+Version: 0.1.0
+Summary: Backend API for the FLIPBELT 40-second packing challenge
+Requires-Python: <3.13,>=3.11
+Requires-Dist: alembic<2.0,>=1.14
+Requires-Dist: alibabacloud-credentials<2.0,>=1.0
+Requires-Dist: aiosqlite<1.0,>=0.20
+Requires-Dist: fastapi<1.0,>=0.115
+Requires-Dist: httpx<1.0,>=0.28
+Requires-Dist: oss2<3.0,>=2.19
+Requires-Dist: pwdlib[argon2]<1.0,>=0.2
+Requires-Dist: pydantic-settings<3.0,>=2.7
+Requires-Dist: python-multipart<1.0,>=0.0.20
+Requires-Dist: psycopg[binary]<4.0,>=3.2
+Requires-Dist: PyJWT<3.0,>=2.10
+Requires-Dist: sqlalchemy<3.0,>=2.0
+Requires-Dist: uvicorn[standard]<1.0,>=0.34

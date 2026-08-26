@@ -1,0 +1,15 @@
+[Unit]
+Description=FLIPBELT 40-second challenge API
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/srv/flipbelt-challenge/backend
+Environment=PYTHONPATH=/srv/flipbelt-challenge/backend
+ExecStart=/srv/flipbelt-challenge/backend/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 18100 --workers 2
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
