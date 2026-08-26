@@ -132,6 +132,7 @@ async def get_me(session: DbSession, participant: Participant = Depends(get_curr
     score = registration.score
     rank_entry = next((item for item in leaderboard if item["registration_id"] == registration.id), None)
     reward = reward_for_score(score.total_score, activity.reward_tiers) if score else None
+    official_rank = rank_entry["rank"] if rank_entry else None
     return {
         "registered": True,
         "registration_id": registration.id,
@@ -139,7 +140,12 @@ async def get_me(session: DbSession, participant: Participant = Depends(get_curr
         "number_plate": registration.number_plate,
         "status": registration.status,
         "score": score.total_score if score else None,
-        "rank": rank_entry["rank"] if rank_entry else None,
+        # rank remains for older clients. The explicit fields let the mobile UI add a
+        # separate, approved display strategy later without disguising the official rank.
+        "rank": official_rank,
+        "official_rank": official_rank,
+        "display_rank": None,
+        "display_title": reward.title if reward is not None else None,
         "reward": (
             {"title": reward.title, "prize_name": reward.prize_name} if reward is not None else None
         ),

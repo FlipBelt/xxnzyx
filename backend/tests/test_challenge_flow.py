@@ -96,7 +96,11 @@ def test_registration_score_rank_and_draw_flow() -> None:
             "/api/v1/me", headers={"Authorization": f"Bearer {participant_token}"}
         )
         assert me_scored_response.status_code == 200
-        assert me_scored_response.json()["draw_qualified"] is True
+        me_scored = me_scored_response.json()
+        assert me_scored["draw_qualified"] is True
+        assert me_scored["rank"] == me_scored["official_rank"]
+        assert me_scored["display_rank"] is None
+        assert me_scored["display_title"] == "能装王者"
 
         draw_response = client.post("/api/v1/admin/draw", headers=admin_headers)
         assert draw_response.status_code == 200, draw_response.text

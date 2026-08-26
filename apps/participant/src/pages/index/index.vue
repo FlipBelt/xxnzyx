@@ -21,7 +21,8 @@
               <view class="qr-card"><image :src="xiaohongshuQrUrl" mode="aspectFit" /><text>小红书</text></view>
               <view class="qr-card"><image :src="douyinQrUrl" mode="aspectFit" /><text>抖音</text></view>
             </view>
-            <view class="notice-list"><text>扫描二维码完成关注后，向现场工作人员出示</text><text>抖音无法长按识别时，请截图后使用抖音扫一扫</text></view>
+            <button v-if="douyinOpenLink" class="social-open-button" @tap.stop="openDouyin">打开抖音关注</button>
+            <view class="notice-list"><text>扫描二维码完成关注后，向现场工作人员出示</text><text>{{ douyinOpenLink ? '如未自动打开，请使用抖音扫一扫识别上方二维码' : '抖音无法长按识别时，请截图后使用抖音扫一扫' }}</text></view>
           </view>
 
           <view v-else-if="step.content === 'signup'" class="form-content" @touchstart.stop @touchend.stop>
@@ -32,9 +33,9 @@
           </view>
 
           <view v-else-if="step.content === 'video'" class="media-content" @touchstart.stop @touchend.stop>
-            <video v-if="videoUrl" class="portrait-video" :src="videoUrl" :poster="videoPosterUrl || undefined" controls object-fit="contain" :autoplay="false" @error="videoFailed = true" @play="videoFailed = false" />
+            <video v-if="videoUrl" :key="videoKey" class="portrait-video" :src="videoUrl" :poster="videoPosterUrl || undefined" controls object-fit="contain" :autoplay="false" :enable-play-gesture="true" @error="videoFailed = true" @play="videoFailed = false" />
             <view v-else class="media-placeholder"><text>示范视频正在更新</text><small>可点击下方按钮继续</small></view>
-            <view v-if="videoFailed" class="media-error"><text>视频加载失败，请检查网络后重新播放；也可以继续下一步。</text></view>
+            <view v-if="videoFailed" class="media-error"><text>视频加载失败，请检查网络后重试；也可以继续下一步。</text><button @tap.stop="retryVideo">重新加载视频</button></view>
           </view>
 
           <view v-else-if="step.content === 'rule-one'" class="media-content">
@@ -56,7 +57,8 @@
 
           <view v-else class="result-content">
             <view class="result-score"><text>{{ me?.score ?? '--' }}</text><small>分</small></view>
-            <view class="result-row"><text>当前全场排名</text><b>{{ me?.rank ? `第 ${me.rank} 名` : '成绩待更新' }}</b></view>
+            <view class="result-row"><text>当前全场排名</text><b>{{ officialRank ? `第 ${officialRank} 名` : '成绩待更新' }}</b></view>
+            <view v-if="me?.display_title" class="result-row"><text>本场成绩称号</text><b>{{ me.display_title }}</b></view>
             <view v-if="me?.reward" class="result-row"><text>现场奖励</text><b>{{ me.reward.prize_name }}</b></view>
             <view v-if="me?.draw_qualified" class="draw-content"><text>已达到 {{ activity?.draw_threshold }} 分抽奖门槛，请扫码进入微信群。</text><image :src="groupQrUrl" mode="aspectFit" /></view>
           </view>
@@ -100,6 +102,7 @@ const transitionDirection = ref<'next' | 'previous' | ''>('')
 const error = ref('')
 const successMessage = ref('')
 const videoFailed = ref(false)
+const videoKey = ref(0)
 const touchStartX = ref(0)
 const touchStartY = ref(0)
 const form = reactive({ name: '', phone: '', number_plate: '' })
@@ -122,11 +125,22 @@ function findMedia(kind: string) { return activity.value?.media_assets.find((ite
 function resolvedMedia(kind: string) { const url = findMedia(kind); return url ? mediaUrl(url) : '' }
 const xiaohongshuQrUrl = computed(() => mediaUrl(findMedia('xiaohongshu_qr') || '/assets/小红书二维码测试版.png'))
 const douyinQrUrl = computed(() => mediaUrl(findMedia('douyin_qr') || '/assets/抖音二维码测试版.png'))
+const douyinOpenLink = computed(() => findMedia('douyin_open_link'))
 const groupQrUrl = computed(() => mediaUrl(findMedia('group_qr') || '/assets/测试群二维码.jpg'))
 const videoUrl = computed(() => resolvedMedia('demo_video_portrait'))
 const videoPosterUrl = computed(() => resolvedMedia('demo_video_poster_portrait'))
 const challengeRuleUrl = computed(() => resolvedMedia('challenge_rule_portrait'))
 const scoreRewardUrl = computed(() => resolvedMedia('score_reward_portrait'))
+const officialRank = computed(() => me.value?.official_rank ?? me.value?.rank)
+
+function openDouyin() {
+  if (!douyinOpenLink.value) return
+  if (typeof window !== 'undefined') window.location.href = douyinOpenLink.value
+}
+function retryVideo() {
+  videoFailed.value = false
+  videoKey.value += 1
+}
 
 function clearFeedback() { error.value = ''; successMessage.value = '' }
 async function changeStep(next: number, direction: 'next' | 'previous') {
@@ -235,12 +249,12 @@ onMounted(async () => {
 .transition-next { opacity: .35; transform: translateX(44rpx); }.transition-previous { opacity: .35; transform: translateX(-44rpx); }
 .step-heading > view { display: flex; align-items: center; justify-content: space-between; gap: 18rpx; }.step-tag { padding: 9rpx 15rpx; border-radius: 999rpx; background: var(--surface); font-size: clamp(22rpx, 2.8vw, 28rpx); font-weight: 700; }.step-count { color: var(--card-muted); font-size: 24rpx; }.step-title { display: block; margin-top: 24rpx; font-size: clamp(46rpx, 7.5vw, 72rpx); line-height: 1.16; font-weight: 750; letter-spacing: -2rpx; }.step-copy { display: block; margin-top: 12rpx; color: var(--card-muted); font-size: clamp(27rpx, 3.7vw, 34rpx); line-height: 1.55; }
 .step-content { display: flex; min-height: 0; margin-top: 22rpx; flex: 1; flex-direction: column; }.follow-content, .form-content, .challenge-content, .result-content { margin: auto 0; }.qr-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16rpx; }.qr-card { display: flex; padding: 15rpx; align-items: center; flex-direction: column; border-radius: 24rpx; background: var(--surface); font-size: 28rpx; font-weight: 700; }.qr-card image { width: 100%; height: min(36vw, 300rpx); margin-bottom: 10rpx; border-radius: 16rpx; background: #fff; }
-.notice-list { display: grid; margin-top: 20rpx; }.notice-list text { padding: 15rpx 0; border-bottom: 1rpx solid rgba(24,24,27,.14); color: var(--card-muted); font-size: 28rpx; line-height: 1.45; }
+.social-open-button { width: auto; margin: 18rpx auto 0; padding: 14rpx 28rpx; border: 2rpx solid var(--card-text); border-radius: 999rpx; background: var(--card-text); color: var(--card-bg); font-size: 28rpx; font-weight: 700; line-height: 1.35; }.notice-list { display: grid; margin-top: 20rpx; }.notice-list text { padding: 15rpx 0; border-bottom: 1rpx solid rgba(24,24,27,.14); color: var(--card-muted); font-size: 28rpx; line-height: 1.45; }
 .form-content { display: grid; gap: 18rpx; }.form-content label { color: var(--card-muted); font-size: 28rpx; }.form-content input { width: 100%; height: 92rpx; margin-top: 7rpx; padding: 0 20rpx; border: 1rpx solid rgba(24,24,27,.18); border-radius: 20rpx; background: rgba(255,255,255,.88); color: #18181b; font-size: 33rpx; }.single-challenge-tip { padding: 18rpx 0; color: var(--card-muted); font-size: 28rpx; text-align: center; }
-.media-content { display: flex; min-height: min(52dvh, 920rpx); flex: 1; align-items: center; justify-content: center; overflow: hidden; border-radius: 26rpx; background: rgba(15,23,42,.1); }.portrait-video, .portrait-poster { display: block; width: 100%; height: min(64dvh, 1160rpx); object-fit: contain; background: #0f172a; }.media-placeholder { display: grid; min-height: min(48dvh, 800rpx); padding: 36rpx; place-content: center; text-align: center; }.media-placeholder text { font-size: 40rpx; font-weight: 700; }.media-placeholder small { margin-top: 14rpx; color: var(--card-muted); font-size: 28rpx; }.media-error { margin-top: 12rpx; padding: 14rpx 18rpx; border-radius: 14rpx; background: rgba(127,29,69,.12); color: #7f1d45; font-size: 24rpx; line-height: 1.45; }
+.media-content { position: relative; display: flex; min-height: 0; flex: 1; align-items: center; justify-content: center; overflow: hidden; border-radius: 26rpx; background: rgba(15,23,42,.1); }.portrait-video, .portrait-poster { display: block; width: 100%; height: 100%; min-height: 0; object-fit: contain; background: #0f172a; }.media-placeholder { display: grid; min-height: min(42dvh, 720rpx); padding: 36rpx; place-content: center; text-align: center; }.media-placeholder text { font-size: 40rpx; font-weight: 700; }.media-placeholder small { margin-top: 14rpx; color: var(--card-muted); font-size: 28rpx; }.media-error { position: absolute; display: flex; right: 20rpx; bottom: 20rpx; left: 20rpx; padding: 14rpx 18rpx; align-items: center; justify-content: space-between; gap: 12rpx; border-radius: 14rpx; background: rgba(255,255,255,.94); color: #7f1d45; font-size: 24rpx; line-height: 1.45; box-shadow: 0 8rpx 20rpx rgba(0,0,0,.16); }.media-error button { width: auto; margin: 0; padding: 8rpx 14rpx; border: 0; border-radius: 999rpx; background: #7f1d45; color: #fff; font-size: 22rpx; line-height: 1.35; }
 .challenge-content { display: grid; gap: 20rpx; color: var(--card-muted); font-size: 32rpx; line-height: 1.65; }.status-title { color: var(--card-text); font-size: 38rpx; font-weight: 700; }.result-score { display: flex; align-items: baseline; gap: 12rpx; margin-bottom: 28rpx; }.result-score text { font-size: 108rpx; font-weight: 750; line-height: 1; letter-spacing: -7rpx; }.result-score small { color: var(--card-muted); font-size: 30rpx; }.result-row { display: flex; padding: 22rpx 0; align-items: center; justify-content: space-between; gap: 16rpx; border-top: 1rpx solid rgba(24,24,27,.15); color: var(--card-muted); font-size: 30rpx; }.result-row b { color: var(--card-text); font-size: 36rpx; }.draw-content { margin-top: 20rpx; color: var(--card-muted); font-size: 28rpx; line-height: 1.5; text-align: center; }.draw-content image { display: block; width: 220rpx; height: 220rpx; margin: 16rpx auto 0; border-radius: 18rpx; background: #fff; }
 .step-actions { display: flex; margin-top: 22rpx; align-items: center; flex-direction: column; }.next-button { width: auto; min-width: 300rpx; max-width: 620rpx; margin: 0; padding: 17rpx 30rpx; border: 2rpx solid var(--card-text); border-radius: 999rpx; background: var(--card-text); color: var(--card-bg); font-size: 30rpx; font-weight: 750; line-height: 1.35; box-shadow: 0 10rpx 22rpx rgba(0,0,0,.16); }.next-button[disabled] { opacity: .55; }.navigation-tip { margin-top: 12rpx; color: var(--card-muted); font-size: 22rpx; }.error-message, .success-message { margin-bottom: 12rpx; font-size: 24rpx; line-height: 1.45; text-align: center; }.error-message { color: #7f1d45; }.success-message { color: #065f46; }
 .progress-bar { display: flex; padding: 20rpx 8rpx 0; justify-content: center; gap: 9rpx; }.progress-bar i { width: 36rpx; height: 6rpx; border-radius: 99rpx; background: rgba(255,255,255,.25); }.progress-bar i.active { background: #00cec9; }
-@media (max-height: 650px) { .flow-shell { padding-top: 14rpx; }.step-panel { min-height: calc(100dvh - 130rpx); margin-top: 10rpx; }.step-title { margin-top: 14rpx; }.step-copy { margin-top: 6rpx; }.step-content { margin-top: 12rpx; }.media-content { min-height: 360px; } }
+@media (max-height: 650px) { .flow-shell { padding-top: 14rpx; }.step-panel { min-height: calc(100dvh - 130rpx); margin-top: 10rpx; }.step-title { margin-top: 14rpx; }.step-copy { margin-top: 6rpx; }.step-content { margin-top: 12rpx; } }
 @media (prefers-reduced-motion: reduce) { .step-panel { transition: none; } }
 </style>
