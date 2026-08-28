@@ -164,6 +164,13 @@ async def seed_demo_data(session: AsyncSession, settings: Settings) -> None:
                 ),
                 MediaAsset(
                     activity_id=activity.id,
+                    kind="taobao_qr",
+                    label="淘宝店铺二维码",
+                    public_url="/assets/淘宝二维码.png",
+                    mime_type="image/png",
+                ),
+                MediaAsset(
+                    activity_id=activity.id,
                     kind="group_qr",
                     label="测试微信群二维码",
                     public_url="/assets/测试群二维码.jpg",
