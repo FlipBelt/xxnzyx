@@ -145,8 +145,15 @@ async def seed_demo_data(session: AsyncSession, settings: Settings) -> None:
                     activity_id=activity.id,
                     kind="douyin_qr",
                     label="抖音二维码",
-                    public_url="/assets/抖音二维码测试版.png",
+                    public_url="/assets/抖音二维码.png",
                     mime_type="image/png",
+                ),
+                MediaAsset(
+                    activity_id=activity.id,
+                    kind="douyin_open_link",
+                    label="抖音官方分享链接",
+                    public_url="https://v.douyin.com/kf1tSYkABlc/",
+                    mime_type="text/uri-list",
                 ),
                 MediaAsset(
                     activity_id=activity.id,
