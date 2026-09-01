@@ -1,6 +1,6 @@
 <template>
   <view class="flow-page">
-    <view class="flow-shell" @touchstart="onPageTouchStart" @touchend="onPageTouchEnd">
+    <view class="flow-shell" @touchstart="onPageTouchStart" @touchend="onPageTouchEnd" @pointerdown="onPagePointerStart" @pointerup="onPagePointerEnd" @pointercancel="onPagePointerCancel">
       <view class="flow-header">
         <view class="brand"><view class="brand-mark">FB</view><text>FLIPBELT 现场挑战</text></view>
         <button v-if="canGoBack" class="back-button" @tap.stop="rewindOne">← 返回上一页</button>
@@ -142,6 +142,9 @@ const videoKey = ref(0)
 const followPanel = ref<'xiaohongshu' | 'douyin' | 'taobao' | ''>('')
 const touchStartX = ref(0)
 const touchStartY = ref(0)
+const pointerStartX = ref(0)
+const pointerStartY = ref(0)
+const pointerSwipeActive = ref(false)
 const form = reactive({ name: '', phone: '', number_plate: '' })
 
 const step = computed(() => steps[current.value])
@@ -263,6 +266,40 @@ function onPageTouchEnd(event: TouchEvent) {
   if (Math.abs(deltaX) < 72 || Math.abs(deltaX) < Math.abs(deltaY) * 1.25) return
   if (deltaX < 0) void advance()
   else void rewindOne()
+}
+
+function isPointerSwipeBlocked(event: PointerEvent) {
+  const target = event.target as HTMLElement | null
+  return Boolean(target?.closest?.('button, input, textarea, select, video, .step-actions, .media-content, .follow-modal'))
+}
+
+function onPagePointerStart(event: PointerEvent) {
+  if (event.pointerType !== 'mouse' || event.button !== 0 || transitioning.value || submitting.value || isPointerSwipeBlocked(event)) {
+    pointerSwipeActive.value = false
+    return
+  }
+  pointerStartX.value = event.clientX
+  pointerStartY.value = event.clientY
+  pointerSwipeActive.value = true
+}
+
+function onPagePointerEnd(event: PointerEvent) {
+  if (event.pointerType !== 'mouse' || !pointerSwipeActive.value) return
+  const deltaX = event.clientX - pointerStartX.value
+  const deltaY = event.clientY - pointerStartY.value
+  pointerSwipeActive.value = false
+  pointerStartX.value = 0
+  pointerStartY.value = 0
+  if (Math.abs(deltaX) < 72 || Math.abs(deltaX) < Math.abs(deltaY) * 1.25) return
+  if (deltaX < 0) void advance()
+  else void rewindOne()
+}
+
+function onPagePointerCancel(event: PointerEvent) {
+  if (event.pointerType !== 'mouse') return
+  pointerSwipeActive.value = false
+  pointerStartX.value = 0
+  pointerStartY.value = 0
 }
 
 function syncViewportHeight() {
