@@ -51,13 +51,25 @@
           </view>
 
           <view v-else-if="step.content === 'rule-one'" class="media-content">
-            <image v-if="challengeRuleUrl" class="portrait-poster" :src="challengeRuleUrl" mode="aspectFit" />
-            <view v-else class="media-placeholder"><text>挑战规则素材正在更新</text><small>可点击下方按钮继续</small></view>
+            <view class="rule-table rule-table--items">
+              <view class="rule-table__row rule-table__row--head"><text>道具</text><text>分值</text><text>数量上限</text></view>
+              <view v-for="item in scoreRuleRows" :key="item.code" class="rule-table__row">
+                <text>{{ item.name }}</text>
+                <text>{{ item.points }}分/个</text>
+                <text v-if="item.required" class="rule-table__pill">必须项</text>
+                <text v-else>{{ item.limit }}</text>
+              </view>
+            </view>
           </view>
 
           <view v-else-if="step.content === 'rule-two'" class="media-content">
-            <image v-if="scoreRewardUrl" class="portrait-poster" :src="scoreRewardUrl" mode="aspectFit" />
-            <view v-else class="media-placeholder"><text>计分与奖励素材正在更新</text><small>可点击下方按钮继续</small></view>
+            <view class="rule-table rule-table--rewards">
+              <view class="rule-table__row rule-table__row--head"><text>最终得分</text><text>即时奖励</text></view>
+              <view v-for="reward in rewardRuleRows" :key="reward.minScore" class="rule-table__row">
+                <text>{{ reward.scoreLabel }}</text>
+                <text>{{ reward.prizeName }}</text>
+              </view>
+            </view>
           </view>
 
           <view v-else-if="step.content === 'challenge'" class="challenge-content">
@@ -169,9 +181,54 @@ const taobaoQrUrl = computed(() => mediaUrl(findMedia('taobao_qr') || '/assets/�
 const groupQrUrl = computed(() => mediaUrl(findMedia('group_qr') || '/assets/测试群二维码.jpg'))
 const videoUrl = computed(() => resolvedMedia('demo_video_portrait'))
 const videoPosterUrl = computed(() => resolvedMedia('demo_video_poster_portrait'))
-const challengeRuleUrl = computed(() => mediaUrl(findMedia('challenge_rule_portrait') || '/assets/challenge-rule-portrait.png'))
-const scoreRewardUrl = computed(() => mediaUrl(findMedia('score_reward_portrait') || '/assets/score-reward-portrait.png'))
 const officialRank = computed(() => me.value?.official_rank ?? me.value?.rank)
+
+const fallbackScoreRuleRows = [
+  { code: 'hidden_bonus', name: '隐藏加码道具', points: 6, limit: '最后5秒出现', required: false },
+  { code: 'light_clothing', name: '轻薄衣物', points: 6, limit: '最多2件', required: false },
+  { code: 'trekking_pole', name: '登山杖', points: 6, limit: '', required: true },
+  { code: 'water_bottle', name: '水壶', points: 5, limit: '', required: true },
+  { code: 'earphones', name: '耳机', points: 3, limit: '', required: true },
+  { code: 'phone_model', name: '手机', points: 3, limit: '', required: true },
+  { code: 'energy_gel', name: '能量胶', points: 2, limit: '最多20个', required: false },
+  { code: 'salt_pills', name: '盐丸', points: 1, limit: '最多20个', required: false },
+]
+const fallbackRewardRuleRows = [
+  { minScore: 50, scoreLabel: '50分以上', prizeName: '运动短袜' },
+  { minScore: 41, scoreLabel: '41–49分', prizeName: '小袋鼠钥匙扣' },
+  { minScore: 31, scoreLabel: '31–40分', prizeName: '飞比特限定编织袋' },
+  { minScore: 1, scoreLabel: '1–30分', prizeName: '冷感冰巾' },
+]
+const scoreRuleRows = computed(() => {
+  const rows = activity.value?.score_items?.length
+    ? [...activity.value.score_items].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)).map((item) => ({
+      code: item.code,
+      name: item.code === 'phone_model' ? '手机' : item.code === 'salt_pills' ? '盐丸' : item.name,
+      points: item.points,
+      limit: item.is_hidden_bonus
+        ? `最后${item.appear_at_seconds_remaining ?? 5}秒出现`
+        : item.max_quantity == null
+          ? ''
+          : `最多${item.max_quantity}${item.code === 'light_clothing' ? '件' : '个'}`,
+      required: item.is_required,
+    }))
+    : fallbackScoreRuleRows
+  return rows
+})
+const rewardRuleRows = computed(() => {
+  const rows = activity.value?.reward_tiers?.length
+    ? [...activity.value.reward_tiers].sort((a, b) => b.min_score - a.min_score).map((tier) => ({
+      minScore: tier.min_score,
+      scoreLabel: tier.max_score == null
+        ? `${tier.min_score}分以上`
+        : tier.min_score === 0 && tier.max_score === 30
+          ? '1–30分'
+          : `${tier.min_score}–${tier.max_score}分`,
+      prizeName: tier.prize_name,
+    }))
+    : fallbackRewardRuleRows
+  return rows
+})
 
 function openFollowPanel(platform: 'xiaohongshu' | 'douyin' | 'taobao') { followPanel.value = platform }
 function closeFollowPanel() { followPanel.value = '' }
@@ -344,6 +401,9 @@ onUnmounted(() => {
 .notice-list { display: grid; margin-top: 20rpx; }.notice-list text { padding: 15rpx 0; border-bottom: 1rpx solid rgba(24,24,27,.14); color: var(--card-muted); font-size: 30rpx; line-height: 1.5; }
 .form-content { display: grid; gap: 18rpx; }.form-content label { color: var(--card-muted); font-size: 28rpx; }.form-content input { width: 100%; height: 92rpx; margin-top: 7rpx; padding: 0 20rpx; border: 1rpx solid rgba(24,24,27,.18); border-radius: 20rpx; background: rgba(255,255,255,.88); color: #18181b; font-size: 33rpx; }.single-challenge-tip { padding: 18rpx 0; color: var(--card-muted); font-size: 28rpx; text-align: center; }
 .media-content { position: relative; display: flex; min-height: 0; flex: 1; align-items: center; justify-content: center; overflow: hidden; border-radius: 26rpx; background: rgba(15,23,42,.1); }.portrait-video, .portrait-poster { display: block; width: 100%; height: 100%; min-height: 0; object-fit: contain; }.portrait-video { background: #0f172a; }.portrait-poster { background: #fff; }.media-placeholder { display: grid; min-height: min(42dvh, 720rpx); padding: 36rpx; place-content: center; text-align: center; }.media-placeholder text { font-size: 40rpx; font-weight: 700; }.media-placeholder small { margin-top: 14rpx; color: var(--card-muted); font-size: 28rpx; }.media-error { position: absolute; display: flex; right: 20rpx; bottom: 20rpx; left: 20rpx; padding: 14rpx 18rpx; align-items: center; justify-content: space-between; gap: 12rpx; border-radius: 14rpx; background: rgba(255,255,255,.94); color: #7f1d45; font-size: 24rpx; line-height: 1.45; box-shadow: 0 8rpx 20rpx rgba(0,0,0,.16); }.media-error button { width: auto; margin: 0; padding: 8rpx 14rpx; border: 0; border-radius: 999rpx; background: #7f1d45; color: #fff; font-size: 22rpx; line-height: 1.35; }
+.step-rule-one .media-content, .step-rule-two .media-content { overflow: visible; background: transparent; }
+.rule-table { width: 100%; overflow: hidden; border: 1rpx solid rgba(24,24,27,.16); border-radius: 28rpx; background: rgba(255,255,255,.72); color: #261d1b; box-shadow: 0 10rpx 24rpx rgba(15,23,42,.08); }
+.rule-table__row { display: grid; min-height: 66rpx; align-items: center; border-top: 1rpx solid rgba(24,24,27,.1); text-align: center; }.rule-table__row:first-child { border-top: 0; }.rule-table__row > text { display: flex; min-width: 0; height: 100%; padding: 10rpx 8rpx; align-items: center; justify-content: center; border-left: 1rpx solid rgba(24,24,27,.1); font-size: clamp(24rpx, 3.25vw, 31rpx); line-height: 1.2; }.rule-table__row > text:first-child { border-left: 0; }.rule-table__row--head { min-height: 76rpx; font-weight: 800; }.rule-table__row--head > text { font-size: clamp(27rpx, 3.8vw, 36rpx); }.rule-table--items .rule-table__row { grid-template-columns: 1.18fr .82fr 1fr; }.rule-table--rewards .rule-table__row { grid-template-columns: 1fr 1.42fr; min-height: 82rpx; }.rule-table--rewards .rule-table__row--head { min-height: 92rpx; }.rule-table--rewards .rule-table__row--head > text { font-size: clamp(32rpx, 5vw, 46rpx); }.rule-table__pill { margin: 9rpx auto; padding: 7rpx 18rpx !important; height: auto !important; border: 0 !important; border-radius: 999rpx; background: #9bd32a; font-weight: 750; }
 .challenge-content { display: grid; gap: 20rpx; color: var(--card-muted); font-size: 32rpx; line-height: 1.65; }.status-title { color: var(--card-text); font-size: 38rpx; font-weight: 700; }.result-score { display: flex; align-items: baseline; gap: 12rpx; margin-bottom: 28rpx; }.result-score text { font-size: 108rpx; font-weight: 750; line-height: 1; letter-spacing: -7rpx; }.result-score small { color: var(--card-muted); font-size: 30rpx; }.result-row { display: flex; padding: 22rpx 0; align-items: center; justify-content: space-between; gap: 16rpx; border-top: 1rpx solid rgba(24,24,27,.15); color: var(--card-muted); font-size: 30rpx; }.result-row b { color: var(--card-text); font-size: 36rpx; }.draw-content { margin-top: 20rpx; color: var(--card-muted); font-size: 28rpx; line-height: 1.5; text-align: center; }.draw-content image { display: block; width: 220rpx; height: 220rpx; margin: 16rpx auto 0; border-radius: 18rpx; background: #fff; }
 .step-actions { display: flex; margin-top: 22rpx; align-items: center; flex-shrink: 0; flex-direction: column; }.next-button { width: auto; min-width: 360rpx; max-width: 650rpx; margin: 0; padding: 21rpx 38rpx; border: 2rpx solid var(--card-text); border-radius: 999rpx; background: var(--card-text); color: var(--card-bg); font-size: 32rpx; font-weight: 750; line-height: 1.35; box-shadow: 0 10rpx 22rpx rgba(0,0,0,.16); }.next-button[disabled] { opacity: .55; }.navigation-tip { margin-top: 12rpx; color: var(--card-muted); font-size: 22rpx; }.error-message, .success-message { margin-bottom: 12rpx; font-size: 24rpx; line-height: 1.45; text-align: center; }.error-message { color: #7f1d45; }.success-message { color: #065f46; }
 .progress-bar { display: flex; padding: 20rpx 8rpx 0; justify-content: center; flex-shrink: 0; gap: 9rpx; }.progress-bar i { width: 36rpx; height: 6rpx; border-radius: 99rpx; background: rgba(255,255,255,.25); }.progress-bar i.active { background: #00cec9; }

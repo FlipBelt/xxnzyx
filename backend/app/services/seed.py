@@ -79,7 +79,7 @@ async def seed_demo_data(session: AsyncSession, settings: Settings) -> None:
                 ScoreItem(
                     activity_id=activity.id,
                     code="phone_model",
-                    name="手机模型",
+                    name="手机",
                     points=3,
                     max_quantity=1,
                     is_required=True,
@@ -96,7 +96,7 @@ async def seed_demo_data(session: AsyncSession, settings: Settings) -> None:
                 ScoreItem(
                     activity_id=activity.id,
                     code="salt_pills",
-                    name="盐丸类道具",
+                    name="盐丸",
                     points=1,
                     max_quantity=20,
                     display_order=80,
@@ -107,7 +107,7 @@ async def seed_demo_data(session: AsyncSession, settings: Settings) -> None:
             [
                 RewardTier(
                     activity_id=activity.id,
-                    min_score=45,
+                    min_score=50,
                     max_score=None,
                     title="能装王者",
                     prize_name="运动短袜",
@@ -115,16 +115,16 @@ async def seed_demo_data(session: AsyncSession, settings: Settings) -> None:
                 ),
                 RewardTier(
                     activity_id=activity.id,
-                    min_score=35,
-                    max_score=44,
+                    min_score=41,
+                    max_score=49,
                     title="能装高手",
                     prize_name="小袋鼠钥匙扣",
                     display_order=20,
                 ),
                 RewardTier(
                     activity_id=activity.id,
-                    min_score=25,
-                    max_score=34,
+                    min_score=31,
+                    max_score=40,
                     title="能装达人",
                     prize_name="飞比特限定编织袋",
                     display_order=30,
@@ -132,7 +132,7 @@ async def seed_demo_data(session: AsyncSession, settings: Settings) -> None:
                 RewardTier(
                     activity_id=activity.id,
                     min_score=0,
-                    max_score=24,
+                    max_score=30,
                     title="能装新手",
                     prize_name="冷感冰巾",
                     display_order=40,
