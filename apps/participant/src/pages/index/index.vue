@@ -80,11 +80,19 @@
           </view>
 
           <view v-else class="result-content">
-            <view class="result-score"><text>{{ me?.score ?? '--' }}</text><small>分</small></view>
-            <view class="result-row"><text>当前全场排名</text><b>{{ officialRank ? `第 ${officialRank} 名` : '成绩待更新' }}</b></view>
-            <view v-if="me?.display_title" class="result-row"><text>本场成绩称号</text><b>{{ me.display_title }}</b></view>
-            <view v-if="me?.reward" class="result-row"><text>现场奖励</text><b>{{ me.reward.prize_name }}</b></view>
-            <view v-if="me?.draw_qualified" class="draw-content"><text>已达到 {{ activity?.draw_threshold }} 分抽奖门槛，请扫码进入微信群。</text><image :src="groupQrUrl" mode="aspectFit" /></view>
+            <view class="result-score-panel">
+              <text class="result-label">分数</text>
+              <view class="result-score"><text>{{ me?.score ?? '--' }}</text><small>分</small></view>
+            </view>
+            <view v-if="me?.reward" class="result-highlight result-reward">
+              <text class="result-label">奖品</text>
+              <b>{{ me.reward.prize_name }}</b>
+            </view>
+            <view v-if="me?.display_title" class="result-highlight result-title">
+              <text class="result-label">称号</text>
+              <b>{{ me.display_title }}</b>
+            </view>
+            <view v-if="me?.draw_qualified" class="draw-content"><text>已达到 {{ activity?.draw_threshold }} 分抽奖门槛，请扫码进入微信群。</text><image :src="groupQrImage" mode="aspectFit" /></view>
           </view>
         </view>
 
@@ -129,6 +137,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import Taro from '@tarojs/taro'
 import { api, hasToken, mediaUrl, saveToken, type Activity, type Me } from '../../services/api'
+import groupQrImage from '../../assets/group-qr-cropped.png'
 
 const steps = [
   { id: 'follow', tag: '第 1 步 · 关注确认', title: '关注品牌账号', copy: '完成关注后，点击下方按钮继续报名。', content: 'follow' },
@@ -184,8 +193,6 @@ const videoUrl = computed(() => {
   return resolved ? `${resolved}${resolved.includes('?') ? '&' : '?'}v=20260907-optimized` : ''
 })
 const videoPosterUrl = computed(() => resolvedMedia('demo_video_poster_portrait'))
-const officialRank = computed(() => me.value?.official_rank ?? me.value?.rank)
-
 const fallbackScoreRuleRows = [
   { code: 'hidden_bonus', name: '隐藏加码道具', points: 6, limit: '最后5秒出现', required: false },
   { code: 'light_clothing', name: '轻薄衣物', points: 6, limit: '最多2件', required: false },
@@ -412,6 +419,7 @@ onUnmounted(() => {
 .rule-table { --table-body-size: clamp(27rpx, 3.6vw, 34rpx); --table-head-size: clamp(29rpx, 4vw, 38rpx); width: 100%; overflow: hidden; border: 1rpx solid rgba(24,24,27,.16); border-radius: 28rpx; background: rgba(255,255,255,.72); color: #261d1b; box-shadow: 0 10rpx 24rpx rgba(15,23,42,.08); }
 .rule-table__row { display: grid; min-height: 66rpx; align-items: center; border-top: 1rpx solid rgba(24,24,27,.1); text-align: center; }.rule-table__row:first-child { border-top: 0; }.rule-table__row > text { display: flex; min-width: 0; height: 100%; padding: 10rpx 8rpx; align-items: center; justify-content: center; border-left: 1rpx solid rgba(24,24,27,.1); font-size: var(--table-body-size); line-height: 1.2; }.rule-table__row > text:first-child { border-left: 0; }.rule-table__row--head { min-height: 76rpx; font-weight: 800; }.rule-table__row--head > text { font-size: var(--table-head-size); }.rule-table--items .rule-table__row { grid-template-columns: 1.18fr .82fr 1fr; }.rule-table--rewards { --table-body-size: clamp(28rpx, 3.8vw, 36rpx); }.rule-table--rewards .rule-table__row { grid-template-columns: 1fr 1.42fr; min-height: 82rpx; }.rule-table--rewards .rule-table__row--head { min-height: 92rpx; }.rule-table--rewards .rule-table__row--head > text { font-size: clamp(32rpx, 5vw, 46rpx); }.rule-table__pill { margin: 9rpx auto; padding: 7rpx 18rpx !important; height: auto !important; border: 0 !important; border-radius: 999rpx; background: #9bd32a; font-weight: 750; }
 .challenge-content { display: grid; gap: 20rpx; color: var(--card-muted); font-size: 32rpx; line-height: 1.65; }.status-title { color: var(--card-text); font-size: 38rpx; font-weight: 700; }.result-score { display: flex; align-items: baseline; gap: 12rpx; margin-bottom: 24rpx; }.result-score text { font-size: clamp(132rpx, 18vw, 156rpx); font-weight: 750; line-height: .95; letter-spacing: -8rpx; }.result-score small { color: var(--card-muted); font-size: 32rpx; }.result-row { display: flex; padding: 20rpx 0; align-items: center; justify-content: space-between; gap: 16rpx; border-top: 1rpx solid rgba(24,24,27,.15); color: var(--card-muted); font-size: 30rpx; }.result-row b { color: var(--card-text); font-size: 38rpx; }.draw-content { margin-top: 14rpx; color: var(--card-muted); font-size: 28rpx; line-height: 1.5; text-align: center; }.draw-content image { display: block; width: clamp(300rpx, 52vw, 380rpx); height: clamp(300rpx, 52vw, 380rpx); margin: 10rpx auto 0; border-radius: 18rpx; background: #fff; }
+.result-score-panel, .result-highlight { display: flex; align-items: center; justify-content: center; flex-direction: column; border-radius: 24rpx; background: rgba(255,255,255,.1); text-align: center; }.result-score-panel { padding: 18rpx 24rpx 20rpx; }.result-label { display: block; color: var(--card-muted); font-size: 30rpx; line-height: 1.35; }.result-score-panel .result-label { font-size: 34rpx; font-weight: 700; }.result-score-panel .result-score { margin: 4rpx 0 0; }.result-score-panel .result-score text { font-size: clamp(132rpx, 18vw, 156rpx); }.result-highlight { margin-top: 14rpx; padding: 16rpx 24rpx 18rpx; border-top: 1rpx solid rgba(24,24,27,.15); }.result-highlight b { display: block; margin-top: 5rpx; color: var(--card-text); font-size: clamp(36rpx, 5vw, 46rpx); line-height: 1.25; }.draw-content { margin-top: 18rpx; }.draw-content image { width: clamp(300rpx, 52vw, 380rpx); height: clamp(300rpx, 52vw, 380rpx); }
 .step-actions { display: flex; margin-top: 22rpx; align-items: center; flex-shrink: 0; flex-direction: column; }.next-button { width: auto; min-width: 360rpx; max-width: 650rpx; margin: 0; padding: 21rpx 38rpx; border: 2rpx solid var(--card-text); border-radius: 999rpx; background: var(--card-text); color: var(--card-bg); font-size: 32rpx; font-weight: 750; line-height: 1.35; box-shadow: 0 10rpx 22rpx rgba(0,0,0,.16); }.next-button[disabled] { opacity: .55; }.navigation-tip { margin-top: 12rpx; color: var(--card-muted); font-size: 22rpx; }.error-message, .success-message { margin-bottom: 12rpx; font-size: 24rpx; line-height: 1.45; text-align: center; }.error-message { color: #7f1d45; }.success-message { color: #065f46; }
 .progress-bar { display: flex; padding: 20rpx 8rpx 0; justify-content: center; flex-shrink: 0; gap: 9rpx; }.progress-bar i { width: 36rpx; height: 6rpx; border-radius: 99rpx; background: rgba(255,255,255,.25); }.progress-bar i.active { background: #00cec9; }
 .step-follow .step-actions { transform: translateY(-100rpx); }
