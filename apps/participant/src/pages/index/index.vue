@@ -179,7 +179,10 @@ const xiaohongshuQrUrl = computed(() => mediaUrl(findMedia('xiaohongshu_qr') || 
 const douyinQrUrl = computed(() => mediaUrl(findMedia('douyin_qr') || '/assets/抖音二维码.png'))
 const taobaoQrUrl = computed(() => mediaUrl(findMedia('taobao_qr') || '/assets/淘宝二维码.png'))
 const groupQrUrl = computed(() => mediaUrl(findMedia('group_qr') || '/assets/测试群二维码.jpg'))
-const videoUrl = computed(() => mediaUrl(findMedia('demo_video_portrait') || findMedia('demo_video') || '/assets/袋鼠裤.mp4'))
+const videoUrl = computed(() => {
+  const resolved = mediaUrl(findMedia('demo_video_portrait') || findMedia('demo_video') || '/assets/袋鼠裤.mp4')
+  return resolved ? `${resolved}${resolved.includes('?') ? '&' : '?'}v=20260907-optimized` : ''
+})
 const videoPosterUrl = computed(() => resolvedMedia('demo_video_poster_portrait'))
 const officialRank = computed(() => me.value?.official_rank ?? me.value?.rank)
 
