@@ -86,7 +86,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { Bell, EditPen, Odometer, Search, Setting, Trophy, UserFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { adminApi, type Activity, type Dashboard, type DrawResult, type Leaderboard, type MediaAsset, type Registration, type ScoreItem } from './services/api'
@@ -127,7 +127,15 @@ async function loadAll() { try { const [dash, loadedConfig, ranks, candidates] =
 async function changeSection(value: string) { section.value = value; if (value === 'score') await searchRegistrations(); if (value === 'ranking') await loadAll() }
 async function searchFromTop() { keyword.value = globalSearch.value; await changeSection('score') }
 async function searchRegistrations() { try { registrations.value = (await adminApi.registrations(keyword.value)).items } catch (err) { ElMessage.error(err instanceof Error ? err.message : '查询失败') } }
-function selectRegistration(row: Registration) { selectedRegistration.value = row; for (const key of Object.keys(scoreForm)) delete scoreForm[Number(key)]; for (const item of config.value?.score_items || []) scoreForm[item.id] = 0 }
+function selectRegistration(row: Registration) {
+  selectedRegistration.value = row
+  for (const key of Object.keys(scoreForm)) delete scoreForm[Number(key)]
+  for (const item of config.value?.score_items || []) scoreForm[item.id] = 0
+  for (const detail of row.score_details || []) {
+    if (detail.score_item_id in scoreForm) scoreForm[detail.score_item_id] = detail.quantity
+  }
+  void nextTick(() => document.querySelector<HTMLElement>('.score-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+}
 async function createSupplement() { if (!supplementForm.name.trim() || !/^\d{11}$/.test(supplementForm.phone) || !supplementForm.number_plate.trim()) { ElMessage.warning('请填写姓名、11位手机号和本场参赛号码牌'); return }; busy.value = true; try { const created = await adminApi.createRegistration(supplementForm); ElMessage.success('参赛者已补录，可直接登记成绩'); Object.assign(supplementForm, { name: '', phone: '', number_plate: '' }); selectRegistration(created); section.value = 'score'; await searchRegistrations() } catch (err) { ElMessage.error(err instanceof Error ? err.message : '补录失败') } finally { busy.value = false } }
 async function saveScore() { if (!selectedRegistration.value || !config.value) return; busy.value = true; try { const result = await adminApi.saveScore(selectedRegistration.value.id, config.value.score_items.map((item) => ({ score_item_id: item.id, quantity: scoreForm[item.id] || 0 }))); ElMessage.success(`成绩已保存：${(result as { total_score: number }).total_score} 分`); await loadAll(); await searchRegistrations() } catch (err) { ElMessage.error(err instanceof Error ? err.message : '保存失败') } finally { busy.value = false } }
 async function runDraw() { try { await ElMessageBox.confirm('将从符合资格的参赛者中随机抽取两位，结果会保存且不能重复抽取。确定执行吗？', '执行最终抽奖', { type: 'warning' }); drawResult.value = await adminApi.draw(); ElMessage.success('抽奖已执行并保存') } catch (err) { if (err !== 'cancel') ElMessage.error(err instanceof Error ? err.message : '抽奖失败') } }

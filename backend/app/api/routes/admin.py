@@ -164,7 +164,7 @@ async def list_registrations(
     query = (
         select(Registration)
         .where(Registration.activity_id == activity.id)
-        .options(selectinload(Registration.score))
+        .options(selectinload(Registration.score).selectinload(ChallengeScore.details))
         .order_by(Registration.id.desc())
     )
     if keyword:
@@ -184,6 +184,14 @@ async def list_registrations(
                 "number_plate": registration.number_plate,
                 "status": registration.status,
                 "score": registration.score.total_score if registration.score else None,
+                "score_details": [
+                    {
+                        "score_item_id": detail.score_item_id,
+                        "quantity": detail.quantity,
+                        "subtotal": detail.subtotal,
+                    }
+                    for detail in (registration.score.details if registration.score else [])
+                ],
             }
             for registration in rows
         ]

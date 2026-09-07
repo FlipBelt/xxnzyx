@@ -30,7 +30,7 @@ export const adminApi = {
   dashboard: () => request<Dashboard>('/admin/dashboard', { auth: true }),
   registrations: (keyword = '') => request<{ items: Registration[] }>(`/admin/registrations?keyword=${encodeURIComponent(keyword)}`, { auth: true }),
   createRegistration: (data: { name: string; phone: string; number_plate: string }) => request<Registration>('/admin/registrations', { method: 'POST', auth: true, body: data }),
-  saveScore: (registration_id: number, items: Array<{ score_item_id: number; quantity: number }>) => request('/admin/scores', { method: 'POST', auth: true, body: { registration_id, items } }),
+  saveScore: (registration_id: number, items: Array<{ score_item_id: number; quantity: number }>) => request<ScoreResponse>('/admin/scores', { method: 'POST', auth: true, body: { registration_id, items } }),
   leaderboard: () => request<Leaderboard>('/admin/leaderboard', { auth: true }),
   drawCandidates: () => request<{ threshold: number; items: Array<{ registration_id: number; display_name: string; number_plate: string; score: number }> }>('/admin/draw/candidates', { auth: true }),
   draw: () => request<DrawResult>('/admin/draw', { method: 'POST', auth: true }),
@@ -47,8 +47,10 @@ export function clearAdminToken() { localStorage.removeItem(TOKEN_KEY) }
 export type ScoreItem = { id: number; code: string; name: string; points: number; max_quantity: number | null; is_required: boolean; is_hidden_bonus: boolean; appear_at_seconds_remaining: number | null; display_order?: number }
 export type RewardTier = { id?: number; min_score: number; max_score: number | null; title: string; prize_name: string; display_order?: number }
 export type MediaAsset = { kind: string; label: string; url: string; object_key?: string | null; mime_type?: string | null }
+export type ScoreDetail = { score_item_id: number; quantity: number; subtotal: number }
 export type Activity = { id: number; slug: string; title: string; description?: string; status: string; challenge_duration_seconds: number; challenge_limit: number; draw_threshold: number; leaderboard_name_mode: string; rules_text?: string; score_items: ScoreItem[]; reward_tiers: RewardTier[]; media_assets: MediaAsset[] }
 export type Dashboard = { activity: { id: number; title: string; status: string }; registered_count: number; scored_count: number; pending_score_count: number; draw_qualified_count: number; highest_score: number }
-export type Registration = { id: number; name: string; phone: string; number_plate: string; status: string; score: number | null }
+export type Registration = { id: number; name: string; phone: string; number_plate: string; status: string; score: number | null; score_details?: ScoreDetail[] }
+export type ScoreResponse = { id: number; registration_id: number; total_score: number; reward: { title: string; prize_name: string } | null; details: ScoreDetail[] }
 export type Leaderboard = { activity: string; entries: Array<{ rank: number; display_name: string; number_plate: string; score: number; title?: string }> }
 export type DrawResult = { already_drawn: boolean; results: Array<{ prize_rank: number; registration_id: number; prize_name: string }> }
