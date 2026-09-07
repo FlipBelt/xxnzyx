@@ -28,6 +28,11 @@ export default defineConfig({
     webpackChain(chain) {
       chain.output.filename('js/[name].[contenthash:8].js')
       chain.output.chunkFilename('chunk/[name].[contenthash:8].js')
+    },
+    // CSS 也使用内容哈希，避免长期缓存掩盖移动端视觉调整。
+    miniCssExtractPluginOption: {
+      filename: 'css/[name].[contenthash:8].css',
+      chunkFilename: 'css/[name].[contenthash:8].css'
     }
   }
 })
