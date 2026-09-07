@@ -75,7 +75,7 @@
           <view v-else-if="step.content === 'challenge'" class="challenge-content">
             <text class="status-title">● {{ me?.score == null ? '等待成绩登记' : '已找到你的本场成绩' }}</text>
             <text v-if="me?.score == null">完成线下挑战后，向工作人员告知本场参赛号码牌。工作人员登记完成后，可在这里刷新成绩。</text>
-            <text v-else>你的成绩已经登记完成，点击下方按钮查看成绩、奖励和排名。</text>
+            <text v-else>你的成绩已经登记完成，点击下方按钮查看成绩和奖励。</text>
             <view class="notice-list"><text>挑战结束后掉落的道具不计分</text><text>每人仅可挑战一次</text></view>
           </view>
 
@@ -179,7 +179,7 @@ const actionText = computed(() => [
   '下一步：查看挑战规则',
   '下一步：进入现场挑战',
   me.value?.score == null ? '刷新我的成绩' : '查看我的已有成绩',
-  '刷新成绩与排名',
+  '刷新成绩',
 ][current.value])
 
 function findMedia(kind: string) { return activity.value?.media_assets.find((item) => item.kind === kind)?.url || '' }
