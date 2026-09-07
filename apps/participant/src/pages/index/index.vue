@@ -168,6 +168,8 @@ const touchStartY = ref(0)
 const pointerStartX = ref(0)
 const pointerStartY = ref(0)
 const pointerSwipeActive = ref(false)
+const viewportBaselineHeight = ref(0)
+const viewportKeyboardLocked = ref(false)
 const form = reactive({ name: '', phone: '', number_plate: '' })
 
 const step = computed(() => steps[current.value])
@@ -371,10 +373,34 @@ function onPagePointerCancel(event: PointerEvent) {
   pointerStartY.value = 0
 }
 
-function syncViewportHeight() {
+function isEditableElement(target: EventTarget | null) {
+  return target instanceof HTMLElement && Boolean(target.closest('input, textarea, select'))
+}
+
+function syncViewportHeight(forceOrEvent: boolean | Event = false) {
   if (typeof window === 'undefined') return
+  const force = typeof forceOrEvent === 'boolean' ? forceOrEvent : false
+  if (viewportKeyboardLocked.value && !force) return
   const visibleHeight = window.visualViewport?.height || window.innerHeight
+  if (!viewportBaselineHeight.value) viewportBaselineHeight.value = Math.round(visibleHeight)
   document.documentElement.style.setProperty('--flipbelt-app-height', `${Math.round(visibleHeight)}px`)
+}
+
+function onViewportFocusIn(event: FocusEvent) {
+  if (!isEditableElement(event.target)) return
+  viewportKeyboardLocked.value = true
+  if (viewportBaselineHeight.value) {
+    document.documentElement.style.setProperty('--flipbelt-app-height', `${viewportBaselineHeight.value}px`)
+  }
+}
+
+function onViewportFocusOut(event: FocusEvent) {
+  if (!isEditableElement(event.target) || typeof window === 'undefined') return
+  window.setTimeout(() => {
+    if (isEditableElement(document.activeElement)) return
+    viewportKeyboardLocked.value = false
+    syncViewportHeight(true)
+  }, 180)
 }
 
 onMounted(async () => {
@@ -383,6 +409,8 @@ onMounted(async () => {
     syncViewportHeight()
     window.addEventListener('resize', syncViewportHeight)
     window.visualViewport?.addEventListener('resize', syncViewportHeight)
+    document.addEventListener('focusin', onViewportFocusIn)
+    document.addEventListener('focusout', onViewportFocusOut)
   }
   try { activity.value = await api.currentActivity() }
   catch { error.value = '活动信息加载失败，请刷新后重试。' }
@@ -392,13 +420,15 @@ onUnmounted(() => {
   if (typeof window === 'undefined') return
   window.removeEventListener('resize', syncViewportHeight)
   window.visualViewport?.removeEventListener('resize', syncViewportHeight)
+  document.removeEventListener('focusin', onViewportFocusIn)
+  document.removeEventListener('focusout', onViewportFocusOut)
   document.documentElement.style.removeProperty('--flipbelt-app-height')
 })
 </script>
 
 <style lang="scss">
 .flow-page, .flow-page *, .flow-page *::before, .flow-page *::after { box-sizing: border-box; }
-.flow-page { width: 100%; height: 100vh; height: var(--flipbelt-app-height, 100dvh); min-height: 0; overflow: hidden; background: linear-gradient(135deg, #0f172a, #1e293b); }
+.flow-page { width: 100%; height: 100vh; height: 100svh; height: var(--flipbelt-app-height, 100svh); min-height: 0; overflow: hidden; background: linear-gradient(135deg, #0f172a, #1e293b); }
 .flow-shell { display: flex; width: min(100%, 1075rpx); height: 100%; min-height: 0; margin: 0 auto; padding: max(24rpx, env(safe-area-inset-top)) max(28rpx, env(safe-area-inset-right)) max(24rpx, env(safe-area-inset-bottom)) max(28rpx, env(safe-area-inset-left)); overflow: hidden; flex-direction: column; }
 .flow-header { display: flex; min-height: 72rpx; align-items: center; justify-content: space-between; flex-shrink: 0; gap: 18rpx; color: #fff; }
 .brand { display: flex; align-items: center; gap: 14rpx; font-size: 28rpx; font-weight: 700; }.brand-mark { display: grid; width: 54rpx; height: 54rpx; place-items: center; border-radius: 16rpx; background: #6c5ce7; font-size: 24rpx; }
