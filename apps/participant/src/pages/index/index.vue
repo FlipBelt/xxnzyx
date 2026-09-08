@@ -18,23 +18,32 @@
         <view class="step-content">
           <view v-if="step.content === 'follow'" class="follow-content">
             <view class="platform-grid">
-              <button class="platform-entry platform-entry--red" @tap.stop="openFollowPanel('xiaohongshu')">
-                <view class="platform-badge">小红书</view>
-                <text>小红书关注</text>
-                <small>点击查看单独二维码</small>
-              </button>
-              <button class="platform-entry platform-entry--dark" @tap.stop="openFollowPanel('douyin')">
-                <view class="platform-badge">抖音</view>
-                <text>抖音关注</text>
-                <small>点击查看抖音码</small>
-              </button>
-              <button class="platform-entry platform-entry--gold" @tap.stop="openFollowPanel('taobao')">
-                <view class="platform-badge">淘宝</view>
-                <text>淘宝店铺</text>
-                <small>点击查看淘宝码</small>
-              </button>
+              <view class="platform-item">
+                <button class="platform-entry platform-entry--red" @tap.stop="openPlatform('xiaohongshu')">
+                  <view class="platform-badge">小红书</view>
+                  <text>小红书关注</text>
+                  <small>点击直接打开小红书</small>
+                </button>
+                <button class="platform-qr-button" @tap.stop="openFollowPanel('xiaohongshu')">二维码备用</button>
+              </view>
+              <view class="platform-item">
+                <button class="platform-entry platform-entry--dark" @tap.stop="openPlatform('douyin')">
+                  <view class="platform-badge">抖音</view>
+                  <text>抖音关注</text>
+                  <small>点击直接打开抖音</small>
+                </button>
+                <button class="platform-qr-button" @tap.stop="openFollowPanel('douyin')">二维码备用</button>
+              </view>
+              <view class="platform-item">
+                <button class="platform-entry platform-entry--gold" @tap.stop="openPlatform('taobao')">
+                  <view class="platform-badge">淘宝</view>
+                  <text>淘宝店铺</text>
+                  <small>点击直接打开店铺</small>
+                </button>
+                <button class="platform-qr-button" @tap.stop="openFollowPanel('taobao')">二维码备用</button>
+              </view>
             </view>
-            <view class="notice-list"><text>选择平台后，每次只展示一张二维码，避免手机识别错码</text><text>完成关注后，向现场工作人员出示</text></view>
+            <view class="notice-list"><text>点击平台卡片可直接打开；未能唤起时可使用二维码备用</text><text>完成关注后，向现场工作人员出示</text></view>
           </view>
 
           <view v-else-if="step.content === 'signup'" class="form-content" @touchstart.stop @touchend.stop>
@@ -114,20 +123,22 @@
             <view><text class="follow-dialog__eyebrow">关注品牌账号</text><text class="follow-dialog__title">{{ followPanel === 'xiaohongshu' ? '小红书' : followPanel === 'douyin' ? '抖音' : '淘宝店铺' }}</text></view>
             <button class="follow-dialog__close" @tap.stop="closeFollowPanel">×</button>
           </view>
+          <button class="follow-dialog__open-link" @tap.stop="openPlatform(followPanel)">直接打开{{ followPanel === 'xiaohongshu' ? '小红书' : followPanel === 'douyin' ? '抖音' : '淘宝店铺' }}</button>
+          <button class="follow-dialog__copy-link" @tap.stop="copyPlatformLink(followPanel)">复制链接</button>
 
           <template v-if="followPanel === 'xiaohongshu'">
             <view class="single-qr" @tap.stop="previewQr(xiaohongshuQrUrl)"><image :src="xiaohongshuQrUrl" mode="aspectFit" /></view>
-            <text class="follow-dialog__instruction">长按识别小红书二维码；也可以点击二维码单独放大。</text>
+            <text class="follow-dialog__instruction">可直接打开小红书；二维码仅作备用，点击后可单独放大。</text>
           </template>
 
           <template v-else-if="followPanel === 'douyin'">
             <view class="single-qr" @tap.stop="previewQr(douyinQrUrl)"><image :src="douyinQrUrl" mode="aspectFit" /></view>
-            <text class="follow-dialog__instruction">微信通常不能识别抖音码，请点击放大或截图保存，再打开抖音“扫一扫”。</text>
+            <text class="follow-dialog__instruction">微信可能限制抖音唤起；可先尝试直接打开，失败时复制链接或使用二维码。</text>
           </template>
 
           <template v-else>
             <view class="single-qr" @tap.stop="previewQr(taobaoQrUrl)"><image :src="taobaoQrUrl" mode="aspectFit" /></view>
-            <text class="follow-dialog__instruction">请使用手机淘宝扫一扫识别二维码，进入品牌店铺。</text>
+            <text class="follow-dialog__instruction">可直接打开淘宝店铺；二维码仅作备用。</text>
           </template>
         </view>
       </view>
@@ -162,7 +173,8 @@ const error = ref('')
 const successMessage = ref('')
 const videoFailed = ref(false)
 const videoKey = ref(0)
-const followPanel = ref<'xiaohongshu' | 'douyin' | 'taobao' | ''>('')
+type FollowPlatform = 'xiaohongshu' | 'douyin' | 'taobao'
+const followPanel = ref<FollowPlatform | ''>('')
 const touchStartX = ref(0)
 const touchStartY = ref(0)
 const pointerStartX = ref(0)
@@ -195,6 +207,11 @@ function resolvedMedia(kind: string) { const url = findMedia(kind); return url ?
 const xiaohongshuQrUrl = computed(() => mediaUrl(findMedia('xiaohongshu_qr') || '/assets/小红书二维码测试版.png'))
 const douyinQrUrl = computed(() => mediaUrl(findMedia('douyin_qr') || '/assets/抖音二维码.png'))
 const taobaoQrUrl = computed(() => mediaUrl(findMedia('taobao_qr') || '/assets/淘宝二维码.png'))
+const platformLinks: Record<FollowPlatform, string> = {
+  xiaohongshu: 'https://xhslink.cn/m/9NDVMf24PHe',
+  douyin: 'https://v.douyin.com/kf1tSYkABlc/',
+  taobao: 'https://shop.m.taobao.com/shop/shopIndex.htm?shop_navi=index&shop_id=299566488&bc_fl_src=tbsms_crm_3322551300_deliver$3017163071300_0',
+}
 const groupQrUrl = computed(() => mediaUrl(findMedia('group_qr') || '/assets/测试群二维码.jpg'))
 const videoUrl = computed(() => {
   const resolved = mediaUrl(findMedia('demo_video_portrait') || findMedia('demo_video') || '/assets/袋鼠裤.mp4')
@@ -248,9 +265,22 @@ const rewardRuleRows = computed(() => {
   return rows
 })
 
-function openFollowPanel(platform: 'xiaohongshu' | 'douyin' | 'taobao') { followPanel.value = platform }
+function openFollowPanel(platform: FollowPlatform) { followPanel.value = platform }
 function closeFollowPanel() { followPanel.value = '' }
 function previewQr(url: string) { void Taro.previewImage({ current: url, urls: [url] }) }
+function openPlatform(platform: FollowPlatform | '') {
+  if (!platform || typeof window === 'undefined') return
+  window.location.assign(platformLinks[platform])
+}
+async function copyPlatformLink(platform: FollowPlatform | '') {
+  if (!platform) return
+  try {
+    await Taro.setClipboardData({ data: platformLinks[platform] })
+    Taro.showToast({ title: '链接已复制，可粘贴打开', icon: 'none' })
+  } catch {
+    Taro.showToast({ title: '复制失败，请使用二维码', icon: 'none' })
+  }
+}
 function retryVideo() {
   videoFailed.value = false
   videoKey.value += 1
@@ -492,7 +522,7 @@ html.flipbelt-ios-input-focus, body.flipbelt-ios-input-focus { overflow: hidden 
 .transition-next { opacity: .35; transform: translateX(-44rpx); }.transition-previous { opacity: .35; transform: translateX(44rpx); }
 .step-heading > view { display: flex; align-items: center; justify-content: space-between; gap: 18rpx; }.step-tag { padding: 9rpx 15rpx; border-radius: 999rpx; background: var(--surface); font-size: clamp(22rpx, 2.8vw, 28rpx); font-weight: 700; }.step-count { color: var(--card-muted); font-size: 24rpx; }.step-title { display: block; margin-top: 24rpx; font-size: clamp(46rpx, 7.5vw, 72rpx); line-height: 1.16; font-weight: 750; letter-spacing: -2rpx; }.step-copy { display: block; margin-top: 12rpx; color: var(--card-muted); font-size: clamp(27rpx, 3.7vw, 34rpx); line-height: 1.55; }
 .step-content { display: flex; min-height: 0; margin-top: 22rpx; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; flex: 1; flex-direction: column; }.follow-content, .form-content, .challenge-content, .result-content { margin: auto 0; }
-.platform-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 18rpx; }.platform-entry { display: flex; min-width: 0; min-height: 300rpx; margin: 0; padding: 28rpx 18rpx; align-items: center; justify-content: center; flex-direction: column; border: 2rpx solid rgba(24,24,27,.1); border-radius: 26rpx; background: var(--surface); color: var(--card-text); line-height: 1.35; box-shadow: 0 10rpx 22rpx rgba(15,23,42,.08); }.platform-entry::after { border: 0; }.platform-badge { display: grid; width: 116rpx; height: 116rpx; margin-bottom: 22rpx; place-items: center; border-radius: 34rpx; color: #fff; font-size: 27rpx; font-weight: 800; }.platform-entry--red .platform-badge { background: #ff2442; }.platform-entry--dark .platform-badge { background: #101114; text-shadow: -2rpx 0 #25f4ee, 2rpx 0 #fe2c55; }.platform-entry--gold .platform-badge { background: #ff8a00; }.platform-entry text { font-size: 31rpx; font-weight: 750; }.platform-entry small { margin-top: 10rpx; color: var(--card-muted); font-size: 23rpx; }
+.platform-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 18rpx; }.platform-item { display: grid; gap: 12rpx; }.platform-entry { display: flex; min-width: 0; min-height: 278rpx; margin: 0; padding: 26rpx 18rpx; align-items: center; justify-content: center; flex-direction: column; border: 2rpx solid rgba(24,24,27,.1); border-radius: 26rpx; background: var(--surface); color: var(--card-text); line-height: 1.35; box-shadow: 0 10rpx 22rpx rgba(15,23,42,.08); }.platform-entry::after, .platform-qr-button::after { border: 0; }.platform-badge { display: grid; width: 108rpx; height: 108rpx; margin-bottom: 16rpx; place-items: center; border-radius: 32rpx; color: #fff; font-size: 26rpx; font-weight: 800; }.platform-entry--red .platform-badge { background: #ff2442; }.platform-entry--dark .platform-badge { background: #101114; text-shadow: -2rpx 0 #25f4ee, 2rpx 0 #fe2c55; }.platform-entry--gold .platform-badge { background: #ff8a00; }.platform-entry text { font-size: 31rpx; font-weight: 750; }.platform-entry small { margin-top: 8rpx; color: var(--card-muted); font-size: 23rpx; }.platform-qr-button { width: 100%; min-height: 58rpx; margin: 0; padding: 10rpx 14rpx; border: 1rpx solid rgba(24,24,27,.16); border-radius: 999rpx; background: transparent; color: var(--card-muted); font-size: 23rpx; line-height: 1.35; }
 .notice-list { display: grid; margin-top: 20rpx; }.notice-list text { padding: 15rpx 0; border-bottom: 1rpx solid rgba(24,24,27,.14); color: var(--card-muted); font-size: 30rpx; line-height: 1.5; }
 .form-content { display: grid; gap: 18rpx; }.form-content label { color: var(--card-muted); font-size: 28rpx; }.form-content input { width: 100%; height: 92rpx; margin-top: 7rpx; padding: 0 20rpx; border: 1rpx solid rgba(24,24,27,.18); border-radius: 20rpx; background: rgba(255,255,255,.88); color: #18181b; font-size: 33rpx; }.single-challenge-tip { padding: 18rpx 0; color: var(--card-muted); font-size: 28rpx; text-align: center; }
 .media-content { position: relative; display: flex; min-height: 0; flex: 1; align-items: center; justify-content: center; overflow: hidden; border-radius: 26rpx; background: rgba(15,23,42,.1); }.portrait-video, .portrait-poster { display: block; width: 100%; height: 100%; min-height: 0; object-fit: contain; }.portrait-video { background: #0f172a; }.portrait-poster { background: #fff; }.media-placeholder { display: grid; min-height: min(42dvh, 720rpx); padding: 36rpx; place-content: center; text-align: center; }.media-placeholder text { font-size: 40rpx; font-weight: 700; }.media-placeholder small { margin-top: 14rpx; color: var(--card-muted); font-size: 28rpx; }.media-error { position: absolute; display: flex; right: 20rpx; bottom: 20rpx; left: 20rpx; padding: 14rpx 18rpx; align-items: center; justify-content: space-between; gap: 12rpx; border-radius: 14rpx; background: rgba(255,255,255,.94); color: #7f1d45; font-size: 24rpx; line-height: 1.45; box-shadow: 0 8rpx 20rpx rgba(0,0,0,.16); }.media-error button { width: auto; margin: 0; padding: 8rpx 14rpx; border: 0; border-radius: 999rpx; background: #7f1d45; color: #fff; font-size: 22rpx; line-height: 1.35; }
@@ -509,7 +539,7 @@ html.flipbelt-ios-input-focus, body.flipbelt-ios-input-focus { overflow: hidden 
 .step-actions { display: flex; margin-top: 22rpx; align-items: center; flex-shrink: 0; flex-direction: column; }.next-button { width: auto; min-width: 360rpx; max-width: 650rpx; margin: 0; padding: 21rpx 38rpx; border: 2rpx solid var(--card-text); border-radius: 999rpx; background: var(--card-text); color: var(--card-bg); font-size: 32rpx; font-weight: 750; line-height: 1.35; box-shadow: 0 10rpx 22rpx rgba(0,0,0,.16); }.next-button[disabled] { opacity: .55; }.navigation-tip { margin-top: 12rpx; color: var(--card-muted); font-size: 22rpx; }.error-message, .success-message { margin-bottom: 12rpx; font-size: 24rpx; line-height: 1.45; text-align: center; }.error-message { color: #7f1d45; }.success-message { color: #065f46; }
 .progress-bar { display: flex; padding: 20rpx 8rpx 0; justify-content: center; flex-shrink: 0; gap: 9rpx; }.progress-bar i { width: 36rpx; height: 6rpx; border-radius: 99rpx; background: rgba(255,255,255,.25); }.progress-bar i.active { background: #00cec9; }
 .step-follow .step-actions { transform: translateY(-100rpx); }
-.follow-modal { position: fixed; z-index: 30; display: grid; inset: 0; padding: max(30rpx, env(safe-area-inset-top)) max(28rpx, env(safe-area-inset-right)) max(30rpx, env(safe-area-inset-bottom)) max(28rpx, env(safe-area-inset-left)); place-items: center; background: rgba(8,15,30,.72); backdrop-filter: blur(10rpx); }.follow-dialog { width: min(100%, 680rpx); max-height: 100%; padding: 32rpx; overflow-y: auto; border-radius: 34rpx; background: #f7f7fa; color: #18181b; box-shadow: 0 30rpx 80rpx rgba(0,0,0,.36); }.follow-dialog__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20rpx; }.follow-dialog__eyebrow { display: block; color: #71717a; font-size: 24rpx; }.follow-dialog__title { display: block; margin-top: 7rpx; font-size: 48rpx; font-weight: 800; }.follow-dialog__close { width: 66rpx; min-width: 66rpx; height: 66rpx; margin: 0; padding: 0; border: 0; border-radius: 999rpx; background: #e4e4e7; color: #18181b; font-size: 42rpx; line-height: 62rpx; }.follow-dialog__close::after { border: 0; }.single-qr { display: grid; width: min(100%, 500rpx); min-height: 430rpx; margin: 26rpx auto 0; padding: 20rpx; place-items: center; border: 2rpx solid #e4e4e7; border-radius: 26rpx; background: #fff; }.single-qr image { display: block; width: 100%; height: 430rpx; }.follow-dialog__instruction { display: block; margin-top: 22rpx; color: #52525b; font-size: 27rpx; line-height: 1.55; text-align: center; }.douyin-link-box { margin-top: 24rpx; padding: 24rpx; border-radius: 22rpx; background: #e9e9ed; text-align: center; }.douyin-link-box text { display: block; margin-top: 15rpx; color: #52525b; font-size: 24rpx; line-height: 1.5; }.douyin-link-pending { margin-top: 24rpx; padding: 24rpx; border: 2rpx dashed #a1a1aa; border-radius: 22rpx; background: #f0f0f3; text-align: center; }.douyin-link-pending text { display: block; font-size: 30rpx; font-weight: 750; }.douyin-link-pending small { display: block; margin-top: 9rpx; color: #71717a; font-size: 24rpx; line-height: 1.5; }
+.follow-modal { position: fixed; z-index: 30; display: grid; inset: 0; padding: max(30rpx, env(safe-area-inset-top)) max(28rpx, env(safe-area-inset-right)) max(30rpx, env(safe-area-inset-bottom)) max(28rpx, env(safe-area-inset-left)); place-items: center; background: rgba(8,15,30,.72); backdrop-filter: blur(10rpx); }.follow-dialog { width: min(100%, 680rpx); max-height: 100%; padding: 32rpx; overflow-y: auto; border-radius: 34rpx; background: #f7f7fa; color: #18181b; box-shadow: 0 30rpx 80rpx rgba(0,0,0,.36); }.follow-dialog__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20rpx; }.follow-dialog__eyebrow { display: block; color: #71717a; font-size: 24rpx; }.follow-dialog__title { display: block; margin-top: 7rpx; font-size: 48rpx; font-weight: 800; }.follow-dialog__close { width: 66rpx; min-width: 66rpx; height: 66rpx; margin: 0; padding: 0; border: 0; border-radius: 999rpx; background: #e4e4e7; color: #18181b; font-size: 42rpx; line-height: 62rpx; }.follow-dialog__close::after { border: 0; }.follow-dialog__open-link, .follow-dialog__copy-link { width: 100%; min-height: 76rpx; margin: 22rpx 0 0; padding: 14rpx 22rpx; border-radius: 999rpx; font-size: 29rpx; font-weight: 750; line-height: 1.35; }.follow-dialog__open-link { border: 0; background: #18181b; color: #fff; }.follow-dialog__copy-link { margin-top: 12rpx; border: 1rpx solid #d4d4d8; background: #fff; color: #3f3f46; }.follow-dialog__open-link::after, .follow-dialog__copy-link::after { border: 0; }.single-qr { display: grid; width: min(100%, 500rpx); min-height: 430rpx; margin: 26rpx auto 0; padding: 20rpx; place-items: center; border: 2rpx solid #e4e4e7; border-radius: 26rpx; background: #fff; }.single-qr image { display: block; width: 100%; height: 430rpx; }.follow-dialog__instruction { display: block; margin-top: 22rpx; color: #52525b; font-size: 27rpx; line-height: 1.55; text-align: center; }.douyin-link-box { margin-top: 24rpx; padding: 24rpx; border-radius: 22rpx; background: #e9e9ed; text-align: center; }.douyin-link-box text { display: block; margin-top: 15rpx; color: #52525b; font-size: 24rpx; line-height: 1.5; }.douyin-link-pending { margin-top: 24rpx; padding: 24rpx; border: 2rpx dashed #a1a1aa; border-radius: 22rpx; background: #f0f0f3; text-align: center; }.douyin-link-pending text { display: block; font-size: 30rpx; font-weight: 750; }.douyin-link-pending small { display: block; margin-top: 9rpx; color: #71717a; font-size: 24rpx; line-height: 1.5; }
 @media (max-height: 650px) { .flow-shell { padding-top: max(14rpx, env(safe-area-inset-top)); padding-bottom: max(14rpx, env(safe-area-inset-bottom)); }.step-panel { margin-top: 10rpx; }.step-title { margin-top: 14rpx; }.step-copy { margin-top: 6rpx; }.step-content { margin-top: 12rpx; }.step-actions { margin-top: 14rpx; } }
 @media (prefers-reduced-motion: reduce) { .step-panel { transition: none; } }
 </style>
