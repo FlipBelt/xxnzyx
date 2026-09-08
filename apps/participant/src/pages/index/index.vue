@@ -394,6 +394,10 @@ function keepWindowAtSavedScroll() {
 
 function lockIOSInputViewport() {
   if (!isIOSWebKit() || typeof window === 'undefined') return
+  if (iosInputFocused.value) {
+    keepWindowAtSavedScroll()
+    return
+  }
   savedWindowScrollY = window.scrollY
   previousHtmlOverflow = document.documentElement.style.overflow
   previousBodyOverflow = document.body.style.overflow
@@ -409,12 +413,13 @@ function lockIOSInputViewport() {
 
 function unlockIOSInputViewport() {
   if (!iosInputFocused.value || typeof window === 'undefined') return
+  const restoreScrollY = savedWindowScrollY
   iosInputFocused.value = false
   document.documentElement.classList.remove('flipbelt-ios-input-focus')
   document.body.classList.remove('flipbelt-ios-input-focus')
   document.documentElement.style.overflow = previousHtmlOverflow
   document.body.style.overflow = previousBodyOverflow
-  window.setTimeout(keepWindowAtSavedScroll, 0)
+  window.setTimeout(() => window.scrollTo(0, restoreScrollY), 0)
 }
 
 function syncViewportHeight(forceOrEvent: boolean | Event = false) {
