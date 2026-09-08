@@ -22,7 +22,7 @@
                 <button class="platform-entry platform-entry--red" @tap.stop="openPlatform('xiaohongshu')">
                   <view class="platform-badge">小红书</view>
                   <text>小红书关注</text>
-                  <small>点击直接打开小红书</small>
+                  <small>点击尝试打开小红书</small>
                 </button>
                 <button class="platform-qr-button" @tap.stop="openFollowPanel('xiaohongshu')">二维码备用</button>
               </view>
@@ -30,7 +30,7 @@
                 <button class="platform-entry platform-entry--dark" @tap.stop="openPlatform('douyin')">
                   <view class="platform-badge">抖音</view>
                   <text>抖音关注</text>
-                  <small>点击直接打开抖音</small>
+                  <small>点击尝试打开抖音</small>
                 </button>
                 <button class="platform-qr-button" @tap.stop="openFollowPanel('douyin')">二维码备用</button>
               </view>
@@ -38,12 +38,12 @@
                 <button class="platform-entry platform-entry--gold" @tap.stop="openPlatform('taobao')">
                   <view class="platform-badge">淘宝</view>
                   <text>淘宝店铺</text>
-                  <small>点击直接打开店铺</small>
+                  <small>点击尝试打开淘宝</small>
                 </button>
                 <button class="platform-qr-button" @tap.stop="openFollowPanel('taobao')">二维码备用</button>
               </view>
             </view>
-            <view class="notice-list"><text>点击平台卡片可直接打开；未能唤起时可使用二维码备用</text><text>完成关注后，向现场工作人员出示</text></view>
+            <view class="notice-list"><text>点击平台卡片尝试打开对应应用；微信未能唤起时请复制链接或使用二维码</text><text>完成关注后，向现场工作人员出示</text></view>
           </view>
 
           <view v-else-if="step.content === 'signup'" class="form-content" @touchstart.stop @touchend.stop>
@@ -138,7 +138,7 @@
 
           <template v-else>
             <view class="single-qr" @tap.stop="previewQr(taobaoQrUrl)"><image :src="taobaoQrUrl" mode="aspectFit" /></view>
-            <text class="follow-dialog__instruction">可直接打开淘宝店铺；二维码仅作备用。</text>
+            <text class="follow-dialog__instruction">可尝试打开淘宝店铺；微信未能唤起时请复制链接或使用二维码。</text>
           </template>
         </view>
       </view>
@@ -150,7 +150,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import Taro from '@tarojs/taro'
 import { api, hasToken, mediaUrl, saveToken, type Activity, type Me } from '../../services/api'
-import groupQrImage from '../../assets/group-qr-cropped.png'
+import groupQrImage from '../../assets/group-qr-square-20260908.png'
 
 const steps = [
   { id: 'follow', tag: '第 1 步 · 关注确认', title: '关注品牌账号', copy: '完成关注后，点击下方按钮继续报名。', content: 'follow' },
