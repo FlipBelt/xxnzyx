@@ -103,7 +103,7 @@
                 <b>{{ me.display_title }}</b>
               </view>
             </view>
-            <view v-if="drawQualified" class="draw-content"><text>已达到 {{ activity?.draw_threshold }} 分抽奖门槛，请扫码进入微信群。</text><image :src="groupQrUrl" mode="aspectFit" @error="onGroupQrError" /></view>
+            <view v-if="drawQualified" class="draw-content"><text>已达到 {{ activity?.draw_threshold }} 分抽奖门槛，请扫码进入微信群。</text><image :src="groupQrImage" mode="aspectFit" /></view>
           </view>
         </view>
 
@@ -183,11 +183,11 @@ const pointerSwipeActive = ref(false)
 const viewportBaselineHeight = ref(0)
 const viewportKeyboardLocked = ref(false)
 const iosInputFocused = ref(false)
-const groupQrFallbackActive = ref(false)
 const form = reactive({ name: '', phone: '', number_plate: '' })
 let savedWindowScrollY = 0
 let previousHtmlOverflow = ''
 let previousBodyOverflow = ''
+let scrollRestoreFrame: number | null = null
 
 const step = computed(() => steps[current.value])
 const canGoBack = computed(() => current.value >= 3)
@@ -213,11 +213,6 @@ const platformLinks: Record<FollowPlatform, string> = {
   douyin: 'https://v.douyin.com/kf1tSYkABlc/',
   taobao: 'https://shop.m.taobao.com/shop/shopIndex.htm?shop_navi=index&shop_id=299566488&bc_fl_src=tbsms_crm_3322551300_deliver$3017163071300_0',
 }
-const groupQrUrl = computed(() => {
-  const configured = findMedia('group_qr')
-  if (!groupQrFallbackActive.value) return groupQrImage
-  return configured ? mediaUrl(configured) : groupQrImage
-})
 const drawQualified = computed(() => {
   if (me.value?.draw_qualified === true) return true
   const score = Number(me.value?.score)
@@ -225,8 +220,8 @@ const drawQualified = computed(() => {
   return Number.isFinite(score) && Number.isFinite(threshold) && score >= threshold
 })
 const videoUrl = computed(() => {
-  const resolved = mediaUrl(findMedia('demo_video_portrait') || findMedia('demo_video') || '/assets/袋鼠裤.mp4')
-  return resolved ? `${resolved}${resolved.includes('?') ? '&' : '?'}v=20260907-optimized` : ''
+  const resolved = mediaUrl(findMedia('demo_video_portrait') || findMedia('demo_video') || '/assets/袋鼠裤-20260908.mp4')
+  return resolved ? `${resolved}${resolved.includes('?') ? '&' : '?'}v=20260908-optimized` : ''
 })
 const videoPosterUrl = computed(() => resolvedMedia('demo_video_poster_portrait'))
 const fallbackScoreRuleRows = [
@@ -279,7 +274,6 @@ const rewardRuleRows = computed(() => {
 function openFollowPanel(platform: FollowPlatform) { followPanel.value = platform }
 function closeFollowPanel() { followPanel.value = '' }
 function previewQr(url: string) { void Taro.previewImage({ current: url, urls: [url] }) }
-function onGroupQrError() { if (!groupQrFallbackActive.value) groupQrFallbackActive.value = true }
 function openPlatform(platform: FollowPlatform | '') {
   if (!platform || typeof window === 'undefined') return
   window.location.assign(platformLinks[platform])
@@ -431,7 +425,12 @@ function isIOSWebKit() {
 
 function keepWindowAtSavedScroll() {
   if (!iosInputFocused.value || typeof window === 'undefined') return
-  window.scrollTo(0, savedWindowScrollY)
+  if (scrollRestoreFrame !== null) return
+  scrollRestoreFrame = window.requestAnimationFrame(() => {
+    scrollRestoreFrame = null
+    if (!iosInputFocused.value || typeof window === 'undefined') return
+    if (Math.abs(window.scrollY - savedWindowScrollY) > 1) window.scrollTo(0, savedWindowScrollY)
+  })
 }
 
 function lockIOSInputViewport() {
@@ -447,6 +446,8 @@ function lockIOSInputViewport() {
   document.body.classList.add('flipbelt-ios-input-focus')
   document.documentElement.style.overflow = 'hidden'
   document.body.style.overflow = 'hidden'
+  const inputViewportHeight = viewportBaselineHeight.value || Math.round(window.innerHeight)
+  document.documentElement.style.setProperty('--flipbelt-ios-input-height', `${inputViewportHeight}px`)
   iosInputFocused.value = true
   keepWindowAtSavedScroll()
   window.setTimeout(keepWindowAtSavedScroll, 80)
@@ -462,6 +463,7 @@ function unlockIOSInputViewport() {
   document.documentElement.style.overflow = previousHtmlOverflow
   document.body.style.overflow = previousBodyOverflow
   window.setTimeout(() => window.scrollTo(0, restoreScrollY), 0)
+  document.documentElement.style.removeProperty('--flipbelt-ios-input-height')
 }
 
 function syncViewportHeight(forceOrEvent: boolean | Event = false) {
@@ -475,6 +477,7 @@ function syncViewportHeight(forceOrEvent: boolean | Event = false) {
 
 function onViewportFocusIn(event: FocusEvent) {
   if (!isEditableElement(event.target)) return
+  if (!isIOSWebKit()) return
   viewportKeyboardLocked.value = true
   if (viewportBaselineHeight.value) {
     document.documentElement.style.setProperty('--flipbelt-app-height', `${viewportBaselineHeight.value}px`)
@@ -484,6 +487,7 @@ function onViewportFocusIn(event: FocusEvent) {
 
 function onViewportFocusOut(event: FocusEvent) {
   if (!isEditableElement(event.target) || typeof window === 'undefined') return
+  if (!isIOSWebKit()) return
   window.setTimeout(() => {
     if (isEditableElement(document.activeElement)) return
     viewportKeyboardLocked.value = false
@@ -515,6 +519,11 @@ onUnmounted(() => {
   document.removeEventListener('focusout', onViewportFocusOut)
   unlockIOSInputViewport()
   document.documentElement.style.removeProperty('--flipbelt-app-height')
+  document.documentElement.style.removeProperty('--flipbelt-ios-input-height')
+  if (scrollRestoreFrame !== null) {
+    window.cancelAnimationFrame(scrollRestoreFrame)
+    scrollRestoreFrame = null
+  }
 })
 </script>
 
@@ -523,7 +532,8 @@ html, body, #app { width: 100%; min-height: 100%; margin: 0; }
 html.flipbelt-ios-input-focus, body.flipbelt-ios-input-focus { overflow: hidden !important; }
 .flow-page, .flow-page *, .flow-page *::before, .flow-page *::after { box-sizing: border-box; }
 .flow-page { width: 100%; height: 100vh; height: 100svh; height: var(--flipbelt-app-height, 100svh); min-height: 0; overflow: hidden; background: linear-gradient(135deg, #0f172a, #1e293b); }
-.flow-page.is-ios-input-focused { position: fixed; z-index: 1; top: 0; right: 0; left: 0; height: var(--flipbelt-app-height, 100svh); transform: translateZ(0); }
+.flow-page.is-ios-input-focused { position: fixed; z-index: 1; inset: 0; width: 100%; height: var(--flipbelt-ios-input-height, var(--flipbelt-app-height, 100svh)); min-height: 0; overflow: hidden; transform: none !important; }
+.flow-page.is-ios-input-focused .step-panel, .flow-page.is-ios-input-focused .step-content, .flow-page.is-ios-input-focused .step-actions { transition: none !important; transform: none !important; }
 .flow-shell { display: flex; width: min(100%, 1075rpx); height: 100%; min-height: 0; margin: 0 auto; padding: max(24rpx, env(safe-area-inset-top)) max(28rpx, env(safe-area-inset-right)) max(24rpx, env(safe-area-inset-bottom)) max(28rpx, env(safe-area-inset-left)); overflow: hidden; flex-direction: column; }
 .flow-header { display: flex; min-height: 72rpx; align-items: center; justify-content: space-between; flex-shrink: 0; gap: 18rpx; color: #fff; }
 .brand { display: flex; align-items: center; gap: 14rpx; font-size: 28rpx; font-weight: 700; }.brand-mark { display: grid; width: 54rpx; height: 54rpx; place-items: center; border-radius: 16rpx; background: #6c5ce7; font-size: 24rpx; }
