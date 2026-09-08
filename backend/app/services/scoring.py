@@ -39,21 +39,27 @@ async def save_score(
     quantities = {entry.score_item_id: entry.quantity for entry in payload.items}
     total = 0
     details: list[ChallengeScoreDetail] = []
+    existing_details = {}
+    if registration.score is not None:
+        existing_details = {detail.score_item_id: detail for detail in registration.score.details}
+        for detail in list(registration.score.details):
+            if detail.score_item_id not in active_items:
+                registration.score.details.remove(detail)
+
     for item in active_items.values():
         quantity = quantities.get(item.id, 0)
         if item.max_quantity is not None and quantity > item.max_quantity:
             raise ScoreValidationError(f"{item.name}最多可录入{item.max_quantity}个")
         subtotal = quantity * item.points
         total += subtotal
-        details.append(
-            ChallengeScoreDetail(
-                score_item_id=item.id,
-                item_name_snapshot=item.name,
-                points_snapshot=item.points,
-                quantity=quantity,
-                subtotal=subtotal,
-            )
-        )
+        detail = existing_details.get(item.id)
+        if detail is None:
+            detail = ChallengeScoreDetail(score_item_id=item.id)
+            details.append(detail)
+        detail.item_name_snapshot = item.name
+        detail.points_snapshot = item.points
+        detail.quantity = quantity
+        detail.subtotal = subtotal
 
     previous_data: dict[str, object] | None = None
     if registration.score is None:
@@ -77,7 +83,6 @@ async def save_score(
         }
         score.total_score = total
         score.entered_by_admin_id = admin.id
-        score.details.clear()
         score.details.extend(details)
         action = "score.update"
 

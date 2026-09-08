@@ -81,13 +81,25 @@ def test_registration_score_rank_and_draw_flow() -> None:
         assert first_score_response.json()["total_score"] == 95
         assert first_score_response.json()["reward"]["title"] == "能装王者"
 
+        updated_score_items = [
+            {**item, "quantity": 0} if item["score_item_id"] == score_item_ids["hidden_bonus"] else item
+            for item in full_score_items
+        ]
+        update_score_response = client.post(
+            "/api/v1/admin/scores",
+            headers=admin_headers,
+            json={"registration_id": participant_one["registration_id"], "items": updated_score_items},
+        )
+        assert update_score_response.status_code == 201, update_score_response.text
+        assert update_score_response.json()["total_score"] == 89
+
         registrations_response = client.get("/api/v1/admin/registrations", headers=admin_headers)
         assert registrations_response.status_code == 200, registrations_response.text
         scored_registration = next(
             item for item in registrations_response.json()["items"]
             if item["id"] == participant_one["registration_id"]
         )
-        assert sum(detail["quantity"] for detail in scored_registration["score_details"]) == 47
+        assert sum(detail["quantity"] for detail in scored_registration["score_details"]) == 46
 
         second_score_response = client.post(
             "/api/v1/admin/scores",
@@ -107,7 +119,7 @@ def test_registration_score_rank_and_draw_flow() -> None:
         )
         assert me_scored_response.status_code == 200
         me_scored = me_scored_response.json()
-        assert me_scored["score"] == 95
+        assert me_scored["score"] == 89
         assert me_scored["draw_qualified"] is True
         assert me_scored["rank"] == me_scored["official_rank"]
         assert me_scored["display_rank"] is None
