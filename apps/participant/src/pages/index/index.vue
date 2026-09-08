@@ -214,8 +214,8 @@ const platformLinks: Record<FollowPlatform, string> = {
   taobao: 'https://shop.m.taobao.com/shop/shopIndex.htm?shop_navi=index&shop_id=299566488&bc_fl_src=tbsms_crm_3322551300_deliver$3017163071300_0',
 }
 const groupQrUrl = computed(() => {
-  if (groupQrFallbackActive.value) return groupQrImage
   const configured = findMedia('group_qr')
+  if (!groupQrFallbackActive.value) return groupQrImage
   return configured ? mediaUrl(configured) : groupQrImage
 })
 const drawQualified = computed(() => {
