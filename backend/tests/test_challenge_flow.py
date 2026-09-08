@@ -31,6 +31,8 @@ def test_registration_score_rank_and_draw_flow() -> None:
         activity = activity_response.json()
         assert activity["challenge_duration_seconds"] == 40
         assert len(activity["score_items"]) == 8
+        group_qr = next(item for item in activity["media_assets"] if item["kind"] == "group_qr")
+        assert group_qr["url"] == "/assets/测试群二维码.jpg"
 
         participant_one = register_participant(client, suffix_one)
         participant_two = register_participant(client, suffix_two)
@@ -105,6 +107,7 @@ def test_registration_score_rank_and_draw_flow() -> None:
         )
         assert me_scored_response.status_code == 200
         me_scored = me_scored_response.json()
+        assert me_scored["score"] == 95
         assert me_scored["draw_qualified"] is True
         assert me_scored["rank"] == me_scored["official_rank"]
         assert me_scored["display_rank"] is None

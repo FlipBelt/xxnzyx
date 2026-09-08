@@ -103,7 +103,7 @@
                 <b>{{ me.display_title }}</b>
               </view>
             </view>
-            <view v-if="me?.draw_qualified" class="draw-content"><text>已达到 {{ activity?.draw_threshold }} 分抽奖门槛，请扫码进入微信群。</text><image :src="groupQrImage" mode="aspectFit" /></view>
+            <view v-if="drawQualified" class="draw-content"><text>已达到 {{ activity?.draw_threshold }} 分抽奖门槛，请扫码进入微信群。</text><image :src="groupQrUrl" mode="aspectFit" @error="onGroupQrError" /></view>
           </view>
         </view>
 
@@ -183,6 +183,7 @@ const pointerSwipeActive = ref(false)
 const viewportBaselineHeight = ref(0)
 const viewportKeyboardLocked = ref(false)
 const iosInputFocused = ref(false)
+const groupQrFallbackActive = ref(false)
 const form = reactive({ name: '', phone: '', number_plate: '' })
 let savedWindowScrollY = 0
 let previousHtmlOverflow = ''
@@ -212,7 +213,17 @@ const platformLinks: Record<FollowPlatform, string> = {
   douyin: 'https://v.douyin.com/kf1tSYkABlc/',
   taobao: 'https://shop.m.taobao.com/shop/shopIndex.htm?shop_navi=index&shop_id=299566488&bc_fl_src=tbsms_crm_3322551300_deliver$3017163071300_0',
 }
-const groupQrUrl = computed(() => mediaUrl(findMedia('group_qr') || '/assets/测试群二维码.jpg'))
+const groupQrUrl = computed(() => {
+  if (groupQrFallbackActive.value) return groupQrImage
+  const configured = findMedia('group_qr')
+  return configured ? mediaUrl(configured) : groupQrImage
+})
+const drawQualified = computed(() => {
+  if (me.value?.draw_qualified === true) return true
+  const score = Number(me.value?.score)
+  const threshold = Number(activity.value?.draw_threshold)
+  return Number.isFinite(score) && Number.isFinite(threshold) && score >= threshold
+})
 const videoUrl = computed(() => {
   const resolved = mediaUrl(findMedia('demo_video_portrait') || findMedia('demo_video') || '/assets/袋鼠裤.mp4')
   return resolved ? `${resolved}${resolved.includes('?') ? '&' : '?'}v=20260907-optimized` : ''
@@ -268,6 +279,7 @@ const rewardRuleRows = computed(() => {
 function openFollowPanel(platform: FollowPlatform) { followPanel.value = platform }
 function closeFollowPanel() { followPanel.value = '' }
 function previewQr(url: string) { void Taro.previewImage({ current: url, urls: [url] }) }
+function onGroupQrError() { if (!groupQrFallbackActive.value) groupQrFallbackActive.value = true }
 function openPlatform(platform: FollowPlatform | '') {
   if (!platform || typeof window === 'undefined') return
   window.location.assign(platformLinks[platform])
