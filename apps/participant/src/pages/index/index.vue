@@ -1,5 +1,5 @@
 <template>
-  <view class="flow-page">
+  <view class="flow-page" :class="{ 'is-ios-input-focused': iosInputFocused }">
     <view class="flow-shell" @touchstart="onPageTouchStart" @touchend="onPageTouchEnd" @pointerdown="onPagePointerStart" @pointerup="onPagePointerEnd" @pointercancel="onPagePointerCancel">
       <view class="flow-header">
         <view class="brand"><view class="brand-mark">FB</view><text>FLIPBELT 现场挑战</text></view>
@@ -170,7 +170,11 @@ const pointerStartY = ref(0)
 const pointerSwipeActive = ref(false)
 const viewportBaselineHeight = ref(0)
 const viewportKeyboardLocked = ref(false)
+const iosInputFocused = ref(false)
 const form = reactive({ name: '', phone: '', number_plate: '' })
+let savedWindowScrollY = 0
+let previousHtmlOverflow = ''
+let previousBodyOverflow = ''
 
 const step = computed(() => steps[current.value])
 const canGoBack = computed(() => current.value >= 3)
@@ -377,6 +381,42 @@ function isEditableElement(target: EventTarget | null) {
   return target instanceof HTMLElement && Boolean(target.closest('input, textarea, select'))
 }
 
+function isIOSWebKit() {
+  if (typeof navigator === 'undefined') return false
+  return /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+}
+
+function keepWindowAtSavedScroll() {
+  if (!iosInputFocused.value || typeof window === 'undefined') return
+  window.scrollTo(0, savedWindowScrollY)
+}
+
+function lockIOSInputViewport() {
+  if (!isIOSWebKit() || typeof window === 'undefined') return
+  savedWindowScrollY = window.scrollY
+  previousHtmlOverflow = document.documentElement.style.overflow
+  previousBodyOverflow = document.body.style.overflow
+  document.documentElement.classList.add('flipbelt-ios-input-focus')
+  document.body.classList.add('flipbelt-ios-input-focus')
+  document.documentElement.style.overflow = 'hidden'
+  document.body.style.overflow = 'hidden'
+  iosInputFocused.value = true
+  keepWindowAtSavedScroll()
+  window.setTimeout(keepWindowAtSavedScroll, 80)
+  window.setTimeout(keepWindowAtSavedScroll, 260)
+}
+
+function unlockIOSInputViewport() {
+  if (!iosInputFocused.value || typeof window === 'undefined') return
+  iosInputFocused.value = false
+  document.documentElement.classList.remove('flipbelt-ios-input-focus')
+  document.body.classList.remove('flipbelt-ios-input-focus')
+  document.documentElement.style.overflow = previousHtmlOverflow
+  document.body.style.overflow = previousBodyOverflow
+  window.setTimeout(keepWindowAtSavedScroll, 0)
+}
+
 function syncViewportHeight(forceOrEvent: boolean | Event = false) {
   if (typeof window === 'undefined') return
   const force = typeof forceOrEvent === 'boolean' ? forceOrEvent : false
@@ -392,6 +432,7 @@ function onViewportFocusIn(event: FocusEvent) {
   if (viewportBaselineHeight.value) {
     document.documentElement.style.setProperty('--flipbelt-app-height', `${viewportBaselineHeight.value}px`)
   }
+  lockIOSInputViewport()
 }
 
 function onViewportFocusOut(event: FocusEvent) {
@@ -400,6 +441,7 @@ function onViewportFocusOut(event: FocusEvent) {
     if (isEditableElement(document.activeElement)) return
     viewportKeyboardLocked.value = false
     syncViewportHeight(true)
+    unlockIOSInputViewport()
   }, 180)
 }
 
@@ -408,7 +450,8 @@ onMounted(async () => {
   if (typeof window !== 'undefined') {
     syncViewportHeight()
     window.addEventListener('resize', syncViewportHeight)
-    window.visualViewport?.addEventListener('resize', syncViewportHeight)
+  window.visualViewport?.addEventListener('resize', syncViewportHeight)
+    window.visualViewport?.addEventListener('scroll', keepWindowAtSavedScroll)
     document.addEventListener('focusin', onViewportFocusIn)
     document.addEventListener('focusout', onViewportFocusOut)
   }
@@ -420,15 +463,20 @@ onUnmounted(() => {
   if (typeof window === 'undefined') return
   window.removeEventListener('resize', syncViewportHeight)
   window.visualViewport?.removeEventListener('resize', syncViewportHeight)
+  window.visualViewport?.removeEventListener('scroll', keepWindowAtSavedScroll)
   document.removeEventListener('focusin', onViewportFocusIn)
   document.removeEventListener('focusout', onViewportFocusOut)
+  unlockIOSInputViewport()
   document.documentElement.style.removeProperty('--flipbelt-app-height')
 })
 </script>
 
 <style lang="scss">
+html, body, #app { width: 100%; min-height: 100%; margin: 0; }
+html.flipbelt-ios-input-focus, body.flipbelt-ios-input-focus { overflow: hidden !important; }
 .flow-page, .flow-page *, .flow-page *::before, .flow-page *::after { box-sizing: border-box; }
 .flow-page { width: 100%; height: 100vh; height: 100svh; height: var(--flipbelt-app-height, 100svh); min-height: 0; overflow: hidden; background: linear-gradient(135deg, #0f172a, #1e293b); }
+.flow-page.is-ios-input-focused { position: fixed; z-index: 1; top: 0; right: 0; left: 0; height: var(--flipbelt-app-height, 100svh); transform: translateZ(0); }
 .flow-shell { display: flex; width: min(100%, 1075rpx); height: 100%; min-height: 0; margin: 0 auto; padding: max(24rpx, env(safe-area-inset-top)) max(28rpx, env(safe-area-inset-right)) max(24rpx, env(safe-area-inset-bottom)) max(28rpx, env(safe-area-inset-left)); overflow: hidden; flex-direction: column; }
 .flow-header { display: flex; min-height: 72rpx; align-items: center; justify-content: space-between; flex-shrink: 0; gap: 18rpx; color: #fff; }
 .brand { display: flex; align-items: center; gap: 14rpx; font-size: 28rpx; font-weight: 700; }.brand-mark { display: grid; width: 54rpx; height: 54rpx; place-items: center; border-radius: 16rpx; background: #6c5ce7; font-size: 24rpx; }
