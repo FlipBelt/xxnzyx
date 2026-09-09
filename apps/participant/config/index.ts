@@ -1,6 +1,9 @@
 import { defineConfig } from '@tarojs/cli'
 
-const apiBase = process.env.TARO_APP_API_BASE || 'http://127.0.0.1:8100/api/v1'
+const defaultApiBase = process.env.TARO_ENV === 'h5' && process.env.NODE_ENV === 'production'
+  ? '/flipbelt-api/api/v1'
+  : 'http://127.0.0.1:8100/api/v1'
+const apiBase = process.env.TARO_APP_API_BASE || defaultApiBase
 const outputRoot = process.env.TARO_ENV === 'h5' ? 'dist/h5' : 'dist/weapp'
 const publicPath = process.env.TARO_PUBLIC_PATH || '/flipbelt/'
 
