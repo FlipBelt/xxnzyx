@@ -150,7 +150,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import Taro from '@tarojs/taro'
 import { api, hasToken, mediaUrl, saveToken, type Activity, type Me } from '../../services/api'
-import groupQrImage from '../../assets/group-qr-square-20260908.png'
+import groupQrImage from '../../assets/group-qr-tight-20260909.png'
 
 const steps = [
   { id: 'follow', tag: '第 1 步 · 关注确认', title: '关注品牌账号', copy: '完成关注后，点击下方按钮继续报名。', content: 'follow' },
