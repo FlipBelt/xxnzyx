@@ -54,5 +54,5 @@ export type Activity = { id: number; slug: string; title: string; description?: 
 export type Dashboard = { activity: { id: number; title: string; status: string }; registered_count: number; scored_count: number; pending_score_count: number; draw_qualified_count: number; highest_score: number }
 export type Registration = { id: number; name: string; phone: string; number_plate: string; status: string; score: number | null; score_details?: ScoreDetail[] }
 export type ScoreResponse = { id: number; registration_id: number; total_score: number; reward: { title: string; prize_name: string } | null; details: ScoreDetail[] }
-export type Leaderboard = { activity: string; entries: Array<{ rank: number; display_name: string; number_plate: string; score: number; title?: string }> }
+export type Leaderboard = { activity: string; entries: Array<{ rank: number; display_name: string; number_plate: string; name: string; phone: string; score: number; title?: string }> }
 export type DrawResult = { already_drawn: boolean; results: Array<{ prize_rank: number; registration_id: number; prize_name: string }> }

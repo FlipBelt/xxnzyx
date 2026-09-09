@@ -357,7 +357,7 @@ async def delete_score(
 @router.get("/leaderboard")
 async def admin_leaderboard(session: DbSession, _: AdminUser = Depends(get_current_admin)) -> dict[str, object]:
     activity = await get_current_activity(session)
-    return {"entries": await leaderboard_entries(session, activity)}
+    return {"entries": await leaderboard_entries(session, activity, include_private=True)}
 
 
 @router.get("/draw/candidates")

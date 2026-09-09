@@ -113,7 +113,12 @@ def serialize_activity(activity: Activity) -> dict[str, object]:
     }
 
 
-async def leaderboard_entries(session: AsyncSession, activity: Activity) -> list[dict[str, object]]:
+async def leaderboard_entries(
+    session: AsyncSession,
+    activity: Activity,
+    *,
+    include_private: bool = False,
+) -> list[dict[str, object]]:
     result = await session.execute(
         select(Registration)
         .join(ChallengeScore)
@@ -131,14 +136,19 @@ async def leaderboard_entries(session: AsyncSession, activity: Activity) -> list
             rank = index
             previous_score = registration.score.total_score
         reward = reward_for_score(registration.score.total_score, activity.reward_tiers)
-        entries.append(
-            {
-                "rank": rank,
-                "registration_id": registration.id,
-                "display_name": public_participant_name(registration, activity),
-                "number_plate": registration.number_plate,
-                "score": registration.score.total_score,
-                "title": reward.title if reward else None,
-            }
-        )
+        entry: dict[str, object] = {
+            "rank": rank,
+            "registration_id": registration.id,
+            "display_name": public_participant_name(registration, activity),
+            "number_plate": registration.number_plate,
+            "score": registration.score.total_score,
+            "title": reward.title if reward else None,
+        }
+        if include_private:
+            # The admin view is authenticated and needs the original registration
+            # fields to reconcile a score with the paper/onsite sign-in sheet.
+            # Public leaderboard responses intentionally remain masked.
+            entry["name"] = registration.name_snapshot
+            entry["phone"] = registration.phone_snapshot
+        entries.append(entry)
     return entries

@@ -114,6 +114,16 @@ def test_registration_score_rank_and_draw_flow() -> None:
         entries = leaderboard_response.json()["entries"]
         assert entries[0]["score"] >= entries[1]["score"]
 
+        admin_leaderboard_response = client.get("/api/v1/admin/leaderboard", headers=admin_headers)
+        assert admin_leaderboard_response.status_code == 200
+        admin_entry = next(
+            item for item in admin_leaderboard_response.json()["entries"]
+            if item["registration_id"] == participant_one["registration_id"]
+        )
+        assert admin_entry["name"] == f"测试用户{suffix_one[:2]}"
+        assert admin_entry["phone"] == f"139{int(suffix_one, 16) % 100_000_000:08d}"
+        assert "phone" not in entries[0]
+
         me_scored_response = client.get(
             "/api/v1/me", headers={"Authorization": f"Bearer {participant_token}"}
         )
