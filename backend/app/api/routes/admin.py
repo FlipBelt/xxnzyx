@@ -276,6 +276,35 @@ async def create_or_update_score(
     }
 
 
+@router.put("/scores/{registration_id}")
+async def update_score(
+    registration_id: int,
+    payload: ScoreCreate,
+    session: DbSession,
+    admin: AdminUser = Depends(get_current_admin),
+) -> dict[str, object]:
+    """Explicitly modify an existing score without allowing a new score to be created."""
+    activity = await get_current_activity(session)
+    payload = payload.model_copy(update={"registration_id": registration_id})
+    try:
+        score = await save_score(session, activity, payload, admin, update_only=True)
+    except ScoreValidationError as exc:
+        message = str(exc)
+        code = status.HTTP_404_NOT_FOUND if "尚未录入成绩" in message else status.HTTP_422_UNPROCESSABLE_ENTITY
+        raise HTTPException(status_code=code, detail=message) from exc
+    reward = reward_for_score(score.total_score, activity.reward_tiers)
+    return {
+        "id": score.id,
+        "registration_id": score.registration_id,
+        "total_score": score.total_score,
+        "reward": {"title": reward.title, "prize_name": reward.prize_name} if reward else None,
+        "details": [
+            {"score_item_id": detail.score_item_id, "quantity": detail.quantity, "subtotal": detail.subtotal}
+            for detail in score.details
+        ],
+    }
+
+
 @router.delete("/scores")
 async def delete_all_scores(
     session: DbSession,

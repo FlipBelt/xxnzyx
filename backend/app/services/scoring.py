@@ -17,6 +17,8 @@ async def save_score(
     activity: Activity,
     payload: ScoreCreate,
     admin: AdminUser,
+    *,
+    update_only: bool = False,
 ) -> ChallengeScore:
     result = await session.execute(
         select(Registration)
@@ -63,6 +65,8 @@ async def save_score(
 
     previous_data: dict[str, object] | None = None
     if registration.score is None:
+        if update_only:
+            raise ScoreValidationError("该参赛者尚未录入成绩，不能执行修改")
         score = ChallengeScore(
             registration_id=registration.id,
             total_score=total,

@@ -31,6 +31,7 @@ export const adminApi = {
   registrations: (keyword = '') => request<{ items: Registration[] }>(`/admin/registrations?keyword=${encodeURIComponent(keyword)}`, { auth: true }),
   createRegistration: (data: { name: string; phone: string; number_plate: string }) => request<Registration>('/admin/registrations', { method: 'POST', auth: true, body: data }),
   saveScore: (registration_id: number, items: Array<{ score_item_id: number; quantity: number }>) => request<ScoreResponse>('/admin/scores', { method: 'POST', auth: true, body: { registration_id, items } }),
+  updateScore: (registration_id: number, items: Array<{ score_item_id: number; quantity: number }>) => request<ScoreResponse>(`/admin/scores/${registration_id}`, { method: 'PUT', auth: true, body: { registration_id, items } }),
   deleteScore: (registration_id: number) => request<{ registration_id: number; status: string }>(`/admin/scores/${registration_id}`, { method: 'DELETE', auth: true }),
   deleteAllScores: () => request<{ deleted_count: number }>('/admin/scores', { method: 'DELETE', auth: true }),
   leaderboard: () => request<Leaderboard>('/admin/leaderboard', { auth: true }),

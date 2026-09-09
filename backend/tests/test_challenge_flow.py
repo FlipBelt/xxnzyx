@@ -179,3 +179,39 @@ def test_admin_can_delete_scores_without_deleting_registration() -> None:
         cleared = client.delete("/api/v1/admin/scores", headers=admin_headers)
         assert cleared.status_code == 200, cleared.text
         assert cleared.json()["deleted_count"] >= 1
+
+
+def test_admin_can_explicitly_update_an_existing_score() -> None:
+    suffix = uuid4().hex
+    with TestClient(app) as client:
+        participant = register_participant(client, suffix)
+        activity = client.get("/api/v1/activity/current").json()
+        admin_response = client.post(
+            "/api/v1/admin/login", json={"username": "admin", "password": "admin123"}
+        )
+        assert admin_response.status_code == 200, admin_response.text
+        admin_headers = {"Authorization": f"Bearer {admin_response.json()['access_token']}"}
+        empty_items = [{"score_item_id": item["id"], "quantity": 0} for item in activity["score_items"]]
+        created = client.post(
+            "/api/v1/admin/scores",
+            headers=admin_headers,
+            json={"registration_id": participant["registration_id"], "items": empty_items},
+        )
+        assert created.status_code == 201, created.text
+
+        changed_items = [{**item, "quantity": 1} if index == 0 else item for index, item in enumerate(empty_items)]
+        updated = client.put(
+            f"/api/v1/admin/scores/{participant['registration_id']}",
+            headers=admin_headers,
+            json={"registration_id": participant["registration_id"], "items": changed_items},
+        )
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["total_score"] == activity["score_items"][0]["points"]
+
+        pending = register_participant(client, f"{suffix}-pending")
+        missing_update = client.put(
+            f"/api/v1/admin/scores/{pending['registration_id']}",
+            headers=admin_headers,
+            json={"registration_id": pending["registration_id"], "items": empty_items},
+        )
+        assert missing_update.status_code == 404, missing_update.text
