@@ -128,3 +128,44 @@ def test_registration_score_rank_and_draw_flow() -> None:
         draw_response = client.post("/api/v1/admin/draw", headers=admin_headers)
         assert draw_response.status_code == 200, draw_response.text
         assert len(draw_response.json()["results"]) == 2
+
+
+def test_admin_can_delete_scores_without_deleting_registration() -> None:
+    suffix = uuid4().hex
+    with TestClient(app) as client:
+        participant = register_participant(client, suffix)
+        activity = client.get("/api/v1/activity/current").json()
+        admin_response = client.post(
+            "/api/v1/admin/login", json={"username": "admin", "password": "admin123"}
+        )
+        assert admin_response.status_code == 200, admin_response.text
+        admin_headers = {"Authorization": f"Bearer {admin_response.json()['access_token']}"}
+        score_items = [{"score_item_id": item["id"], "quantity": 0} for item in activity["score_items"]]
+
+        scored = client.post(
+            "/api/v1/admin/scores",
+            headers=admin_headers,
+            json={"registration_id": participant["registration_id"], "items": score_items},
+        )
+        assert scored.status_code == 201, scored.text
+
+        deleted = client.delete(
+            f"/api/v1/admin/scores/{participant['registration_id']}", headers=admin_headers
+        )
+        assert deleted.status_code == 200, deleted.text
+        assert deleted.json() == {"registration_id": participant["registration_id"], "status": "registered"}
+
+        registrations = client.get("/api/v1/admin/registrations", headers=admin_headers)
+        row = next(item for item in registrations.json()["items"] if item["id"] == participant["registration_id"])
+        assert row["status"] == "registered"
+        assert row["score"] is None
+
+        rescored = client.post(
+            "/api/v1/admin/scores",
+            headers=admin_headers,
+            json={"registration_id": participant["registration_id"], "items": score_items},
+        )
+        assert rescored.status_code == 201, rescored.text
+        cleared = client.delete("/api/v1/admin/scores", headers=admin_headers)
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json()["deleted_count"] >= 1

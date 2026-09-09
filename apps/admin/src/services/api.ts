@@ -2,7 +2,7 @@
 const API_BASE = import.meta.env.VITE_API_BASE || '/flipbelt-api/api/v1'
 const TOKEN_KEY = 'flipbelt_admin_token'
 
-type Options = { method?: 'GET' | 'POST' | 'PUT'; body?: unknown; auth?: boolean }
+type Options = { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: unknown; auth?: boolean }
 async function request<T>(path: string, options: Options = {}): Promise<T> {
   const token = localStorage.getItem(TOKEN_KEY)
   const response = await fetch(`${API_BASE}${path}`, {
@@ -31,6 +31,8 @@ export const adminApi = {
   registrations: (keyword = '') => request<{ items: Registration[] }>(`/admin/registrations?keyword=${encodeURIComponent(keyword)}`, { auth: true }),
   createRegistration: (data: { name: string; phone: string; number_plate: string }) => request<Registration>('/admin/registrations', { method: 'POST', auth: true, body: data }),
   saveScore: (registration_id: number, items: Array<{ score_item_id: number; quantity: number }>) => request<ScoreResponse>('/admin/scores', { method: 'POST', auth: true, body: { registration_id, items } }),
+  deleteScore: (registration_id: number) => request<{ registration_id: number; status: string }>(`/admin/scores/${registration_id}`, { method: 'DELETE', auth: true }),
+  deleteAllScores: () => request<{ deleted_count: number }>('/admin/scores', { method: 'DELETE', auth: true }),
   leaderboard: () => request<Leaderboard>('/admin/leaderboard', { auth: true }),
   drawCandidates: () => request<{ threshold: number; items: Array<{ registration_id: number; display_name: string; number_plate: string; score: number }> }>('/admin/draw/candidates', { auth: true }),
   draw: () => request<DrawResult>('/admin/draw', { method: 'POST', auth: true }),

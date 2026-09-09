@@ -276,6 +276,84 @@ async def create_or_update_score(
     }
 
 
+@router.delete("/scores")
+async def delete_all_scores(
+    session: DbSession,
+    admin: AdminUser = Depends(get_current_admin),
+) -> dict[str, int]:
+    """Clear all entered scores for the current activity while keeping registrations."""
+    activity = await get_current_activity(session)
+    rows = list(
+        (
+            await session.execute(
+                select(ChallengeScore)
+                .join(Registration, Registration.id == ChallengeScore.registration_id)
+                .where(Registration.activity_id == activity.id)
+                .options(selectinload(ChallengeScore.details), selectinload(ChallengeScore.registration))
+            )
+        ).scalars()
+    )
+    registration_ids = [score.registration_id for score in rows]
+    for score in rows:
+        score.registration.status = "registered"
+        await session.delete(score)
+    session.add(
+        AuditLog(
+            activity_id=activity.id,
+            admin_user_id=admin.id,
+            action="score.bulk_delete",
+            entity_type="challenge_score",
+            entity_id=str(activity.id),
+            before_data={"registration_ids": registration_ids, "count": len(registration_ids)},
+            after_data={"deleted_count": len(registration_ids)},
+        )
+    )
+    await session.commit()
+    return {"deleted_count": len(registration_ids)}
+
+
+@router.delete("/scores/{registration_id}")
+async def delete_score(
+    registration_id: int,
+    session: DbSession,
+    admin: AdminUser = Depends(get_current_admin),
+) -> dict[str, int | str]:
+    """Remove one entered score and return the registration to the waiting state."""
+    activity = await get_current_activity(session)
+    registration = await session.scalar(
+        select(Registration)
+        .where(Registration.id == registration_id, Registration.activity_id == activity.id)
+        .options(selectinload(Registration.score).selectinload(ChallengeScore.details))
+    )
+    if registration is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="参赛者不存在")
+    score = registration.score
+    if score is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="该参赛者尚未录入成绩")
+    before_data = {
+        "total_score": score.total_score,
+        "details": [
+            {"score_item_id": detail.score_item_id, "quantity": detail.quantity, "subtotal": detail.subtotal}
+            for detail in score.details
+        ],
+    }
+    registration.status = "registered"
+    await session.delete(score)
+    session.add(
+        AuditLog(
+            activity_id=activity.id,
+            admin_user_id=admin.id,
+            action="score.delete",
+            entity_type="challenge_score",
+            entity_id=str(registration.id),
+            before_data=before_data,
+            after_data={"registration_status": registration.status},
+        )
+    )
+    await session.commit()
+    return {"registration_id": registration.id, "status": registration.status}
+
+
 @router.get("/leaderboard")
 async def admin_leaderboard(session: DbSession, _: AdminUser = Depends(get_current_admin)) -> dict[str, object]:
     activity = await get_current_activity(session)

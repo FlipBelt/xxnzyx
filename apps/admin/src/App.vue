@@ -45,7 +45,7 @@
 
         <template v-if="section === 'score'">
           <section class="page-intro"><div><h2>登记挑战成绩</h2><p>查询参赛者后，填写现场确认的有效道具数量。</p></div></section>
-          <section class="panel"><header><div><h3>查找参赛者</h3><p>支持姓名、手机号或号码牌</p></div></header><div class="section-actions"><el-input v-model="keyword" clearable placeholder="姓名、手机号或号码牌" @keyup.enter="searchRegistrations"><template #prefix><el-icon><Search /></el-icon></template></el-input><el-button class="primary-button" @click="searchRegistrations">查询</el-button></div><el-table :data="registrations" @row-click="selectRegistration"><el-table-column prop="number_plate" label="号码牌" width="130" /><el-table-column prop="name" label="姓名" /><el-table-column prop="phone" label="手机号" /><el-table-column prop="score" label="当前分数" /><el-table-column prop="status" label="状态" /><el-table-column label="操作" width="100"><template #default="scope"><el-button text class="table-action" @click.stop="selectRegistration(scope.row)">录分</el-button></template></el-table-column></el-table></section>
+          <section class="panel"><header><div><h3>查找参赛者</h3><p>支持姓名、手机号或号码牌；删除成绩只会清除分数，保留报名资料。</p></div></header><div class="section-actions"><el-input v-model="keyword" clearable placeholder="姓名、手机号或号码牌" @keyup.enter="searchRegistrations"><template #prefix><el-icon><Search /></el-icon></template></el-input><el-button class="primary-button" @click="searchRegistrations">查询</el-button><el-button type="danger" plain :disabled="!registrations.some((row) => row.score != null)" @click="deleteAllScores">清空已录分</el-button></div><el-table :data="registrations" @row-click="selectRegistration"><el-table-column prop="number_plate" label="号码牌" width="130" /><el-table-column prop="name" label="姓名" /><el-table-column prop="phone" label="手机号" /><el-table-column prop="score" label="当前分数" /><el-table-column prop="status" label="状态" /><el-table-column label="操作" width="180"><template #default="scope"><el-button text class="table-action" @click.stop="selectRegistration(scope.row)">录分</el-button><el-button v-if="scope.row.score != null" text type="danger" @click.stop="deleteScore(scope.row)">删除分数</el-button></template></el-table-column></el-table></section>
           <section v-if="selectedRegistration && config" class="panel score-panel"><header><div><h3>正在录入：{{ selectedRegistration.name }}（{{ selectedRegistration.number_plate }}）</h3><p>系统会根据有效数量自动计算总分。</p></div></header><el-alert title="只填写现场确认已完全装入且挑战结束未掉落的数量。" type="warning" :closable="false" show-icon /><el-table :data="config.score_items"><el-table-column prop="name" label="道具" /><el-table-column label="分值"><template #default="scope">{{ scope.row.points }} 分/个</template></el-table-column><el-table-column label="上限"><template #default="scope">{{ scope.row.max_quantity ?? '不限' }}</template></el-table-column><el-table-column label="有效数量" width="180"><template #default="scope"><el-input-number v-model="scoreForm[scope.row.id]" :min="0" :max="scope.row.max_quantity ?? 100" /></template></el-table-column></el-table><div class="save-score"><strong>预计总分：<b>{{ scorePreview }}</b> 分</strong><el-button class="primary-button" :loading="busy" @click="saveScore">保存成绩</el-button></div></section>
         </template>
 
@@ -138,6 +138,39 @@ function selectRegistration(row: Registration) {
 }
 async function createSupplement() { if (!supplementForm.name.trim() || !/^\d{11}$/.test(supplementForm.phone) || !supplementForm.number_plate.trim()) { ElMessage.warning('请填写姓名、11位手机号和本场参赛号码牌'); return }; busy.value = true; try { const created = await adminApi.createRegistration(supplementForm); ElMessage.success('参赛者已补录，可直接登记成绩'); Object.assign(supplementForm, { name: '', phone: '', number_plate: '' }); selectRegistration(created); section.value = 'score'; await searchRegistrations() } catch (err) { ElMessage.error(err instanceof Error ? err.message : '补录失败') } finally { busy.value = false } }
 async function saveScore() { if (!selectedRegistration.value || !config.value) return; busy.value = true; try { const result = await adminApi.saveScore(selectedRegistration.value.id, config.value.score_items.map((item) => ({ score_item_id: item.id, quantity: scoreForm[item.id] || 0 }))); ElMessage.success(`成绩已保存：${(result as { total_score: number }).total_score} 分`); await loadAll(); await searchRegistrations() } catch (err) { ElMessage.error(err instanceof Error ? err.message : '保存失败') } finally { busy.value = false } }
+async function deleteScore(row: Registration) {
+  if (row.score == null) return
+  try {
+    await ElMessageBox.confirm(`确认删除 ${row.name}（${row.number_plate}）的 ${row.score} 分成绩吗？报名资料会保留，可重新录分。`, '删除成绩', { type: 'warning', confirmButtonText: '删除成绩', cancelButtonText: '取消' })
+    busy.value = true
+    await adminApi.deleteScore(row.id)
+    if (selectedRegistration.value?.id === row.id) selectedRegistration.value = undefined
+    ElMessage.success('成绩已删除，报名资料已保留')
+    await loadAll()
+    await searchRegistrations()
+  } catch (err) {
+    if (err !== 'cancel' && err !== 'close') ElMessage.error(err instanceof Error ? err.message : '删除失败')
+  } finally {
+    busy.value = false
+  }
+}
+async function deleteAllScores() {
+  const scoredCount = registrations.value.filter((row) => row.score != null).length
+  if (!scoredCount) return
+  try {
+    await ElMessageBox.confirm(`确认清空当前活动全部 ${scoredCount} 条成绩吗？报名资料会保留，之后可以重新录分。`, '清空已录分', { type: 'warning', confirmButtonText: '清空成绩', cancelButtonText: '取消' })
+    busy.value = true
+    const result = await adminApi.deleteAllScores()
+    selectedRegistration.value = undefined
+    ElMessage.success(`已删除 ${result.deleted_count} 条成绩`)
+    await loadAll()
+    await searchRegistrations()
+  } catch (err) {
+    if (err !== 'cancel' && err !== 'close') ElMessage.error(err instanceof Error ? err.message : '清空失败')
+  } finally {
+    busy.value = false
+  }
+}
 async function runDraw() { try { await ElMessageBox.confirm('将从符合资格的参赛者中随机抽取两位，结果会保存且不能重复抽取。确定执行吗？', '执行最终抽奖', { type: 'warning' }); drawResult.value = await adminApi.draw(); ElMessage.success('抽奖已执行并保存') } catch (err) { if (err !== 'cancel') ElMessage.error(err instanceof Error ? err.message : '抽奖失败') } }
 async function saveActivity() { if (!config.value) return; try { config.value = await adminApi.updateActivity(config.value); ElMessage.success('活动规则已保存'); await loadAll() } catch (err) { ElMessage.error(err instanceof Error ? err.message : '保存失败') } }
 function addTier() { config.value?.reward_tiers.push({ min_score: 0, max_score: null, title: '新等级', prize_name: '待设置奖品', display_order: (config.value?.reward_tiers.length || 0) + 1 }) }
