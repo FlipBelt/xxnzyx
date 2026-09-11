@@ -22,8 +22,8 @@
 import { onMounted, ref } from 'vue'
 import Taro from '@tarojs/taro'
 import { api, hasToken, type Me } from '../../services/api'
-import groupQrImage from '../../assets/group-qr-tight-20260909-v2.png'
-const groupQrImageUrl = `${groupQrImage}?v=20260909-qr-render-1`
+import groupQrImage from '../../assets/group-qr-wechat-20260911.png'
+const groupQrImageUrl = `${groupQrImage}?v=20260911-qr-render-1`
 const me = ref<Me>()
 async function load() {
   if (!hasToken()) return
