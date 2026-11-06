@@ -208,7 +208,7 @@ def test_admin_can_explicitly_update_an_existing_score() -> None:
         assert updated.status_code == 200, updated.text
         assert updated.json()["total_score"] == activity["score_items"][0]["points"]
 
-        pending = register_participant(client, f"{suffix}-pending")
+        pending = register_participant(client, uuid4().hex)
         missing_update = client.put(
             f"/api/v1/admin/scores/{pending['registration_id']}",
             headers=admin_headers,

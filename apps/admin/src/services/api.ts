@@ -1,32 +1,47 @@
-// Production uses the same Nginx origin, avoiding a hard-coded localhost API in the browser bundle.
 const API_BASE = import.meta.env.VITE_API_BASE || '/flipbelt-api/api/v1'
 const TOKEN_KEY = 'flipbelt_admin_token'
 
+async function send<T>(path: string, init: RequestInit, authenticated: boolean): Promise<T> {
+  const tokenWhenSent = localStorage.getItem(TOKEN_KEY)
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 15000)
+  try {
+    const response = await fetch(`${API_BASE}${path}`, { ...init, signal: controller.signal })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      if (authenticated && response.status === 401 && tokenWhenSent === localStorage.getItem(TOKEN_KEY)) {
+        clearAdminToken()
+        window.dispatchEvent(new Event('flipbelt-admin-unauthorized'))
+      }
+      throw new Error(typeof data.detail === 'string' ? data.detail : '请求失败，请重试')
+    }
+    return data as T
+  } catch (error) {
+    if (error instanceof TypeError || (error instanceof DOMException && error.name === 'AbortError')) {
+      throw new Error('网络连接失败，请检查网络后重试')
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timeout)
+  }
+}
+
 type Options = { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: unknown; auth?: boolean }
-async function request<T>(path: string, options: Options = {}): Promise<T> {
+function request<T>(path: string, options: Options = {}): Promise<T> {
   const token = localStorage.getItem(TOKEN_KEY)
-  const response = await fetch(`${API_BASE}${path}`, {
+  return send<T>(path, {
     method: options.method ?? 'GET',
     headers: { 'Content-Type': 'application/json', ...(options.auth && token ? { Authorization: `Bearer ${token}` } : {}) },
     body: options.body === undefined ? undefined : JSON.stringify(options.body)
-  })
-  const data = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(data.detail || '请求失败')
-  return data as T
+  }, Boolean(options.auth))
 }
-async function upload<T>(path: string, form: FormData): Promise<T> {
+function upload<T>(path: string, form: FormData): Promise<T> {
   const token = localStorage.getItem(TOKEN_KEY)
-  const response = await fetch(`${API_BASE}${path}`, {
-    method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: form
-  })
-  const data = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(data.detail || '上传失败')
-  return data as T
+  return send<T>(path, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form }, true)
 }
 export const adminApi = {
-  login: (username: string, password: string) => request<{ access_token: string }>('/admin/login', { method: 'POST', body: { username, password } }),
+  login: (username: string, password: string) => request<{ access_token: string; admin: Admin }>('/admin/login', { method: 'POST', body: { username, password } }),
+  me: () => request<Admin>('/admin/me', { auth: true }),
   dashboard: () => request<Dashboard>('/admin/dashboard', { auth: true }),
   registrations: (keyword = '') => request<{ items: Registration[] }>(`/admin/registrations?keyword=${encodeURIComponent(keyword)}`, { auth: true }),
   createRegistration: (data: { name: string; phone: string; number_plate: string }) => request<Registration>('/admin/registrations', { method: 'POST', auth: true, body: data }),
@@ -57,3 +72,5 @@ export type Registration = { id: number; name: string; phone: string; number_pla
 export type ScoreResponse = { id: number; registration_id: number; total_score: number; reward: { title: string; prize_name: string } | null; details: ScoreDetail[] }
 export type Leaderboard = { activity: string; entries: Array<{ rank: number; display_name: string; number_plate: string; name: string; phone: string; score: number; title?: string }> }
 export type DrawResult = { already_drawn: boolean; results: Array<{ prize_rank: number; registration_id: number; prize_name: string }> }
+
+export type Admin = { id: number; username: string; display_name: string; role: 'admin' | 'scorer' }

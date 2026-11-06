@@ -1,17 +1,31 @@
 <template>
-  <el-container class="admin-layout">
+  <main v-if="!authenticated" class="login-shell">
+    <section class="login-card">
+      <img class="login-wordmark" :src="brandLogo" alt="FLIPBELT" />
+      <p class="eyebrow">40秒能装挑战 · 工作人员入口</p>
+      <h1>登录现场管理台</h1>
+      <p class="login-intro">请使用分配给你的工作人员账号。</p>
+      <el-form label-position="top" @submit.prevent="login">
+        <el-form-item label="账号"><el-input v-model="loginForm.username" autocomplete="username" :disabled="loggingIn" /></el-form-item>
+        <el-form-item label="密码"><el-input v-model="loginForm.password" type="password" show-password autocomplete="current-password" :disabled="loggingIn" /></el-form-item>
+        <p v-if="loginError" class="login-error" role="alert">{{ loginError }}</p>
+        <el-button class="primary-button login-button" native-type="submit" :loading="loggingIn">登录</el-button>
+      </el-form>
+    </section>
+  </main>
+  <el-container v-else class="admin-layout">
     <el-aside class="sidebar" width="256px">
-      <div class="admin-logo"><span class="logo-mark">FB</span><div><strong>FLIPBELT</strong><small>40秒能装挑战 · 管理台</small></div></div>
+      <div class="admin-logo"><div><img class="admin-wordmark" :src="brandLogo" alt="FLIPBELT" /><small>40秒能装挑战 · 管理台</small></div></div>
       <nav aria-label="后台导航">
         <el-menu :default-active="section" @select="changeSection">
           <el-menu-item index="dashboard"><el-icon><Odometer /></el-icon><span>现场概况</span></el-menu-item>
-          <el-menu-item index="supplement"><el-icon><UserFilled /></el-icon><span>补录报名</span></el-menu-item>
+          <el-menu-item v-if="isAdmin" index="supplement"><el-icon><UserFilled /></el-icon><span>补录报名</span></el-menu-item>
           <el-menu-item index="score"><el-icon><EditPen /></el-icon><span>登记成绩</span></el-menu-item>
           <el-menu-item index="ranking"><el-icon><Trophy /></el-icon><span>排行榜与抽奖</span></el-menu-item>
-          <el-menu-item index="settings"><el-icon><Setting /></el-icon><span>活动设置</span></el-menu-item>
+          <el-menu-item v-if="isAdmin" index="settings"><el-icon><Setting /></el-icon><span>活动设置</span></el-menu-item>
         </el-menu>
       </nav>
-      <div class="sidebar-footer"><span class="status-dot"></span>活动数据实时保存</div>
+      <div class="sidebar-footer"><span class="status-dot"></span>已连接现场管理台</div>
     </el-aside>
     <el-container class="main-area">
       <el-header class="topbar">
@@ -19,11 +33,13 @@
         <div class="topbar-actions">
           <el-input v-model="globalSearch" class="top-search" placeholder="搜索姓名、手机或号码牌" clearable @keyup.enter="searchFromTop"><template #prefix><el-icon><Search /></el-icon></template></el-input>
           <el-button class="icon-button" circle aria-label="通知"><el-icon><Bell /></el-icon></el-button>
-          <div class="user-chip"><el-icon><UserFilled /></el-icon><span>管理员</span></div>
-          <span class="direct-access">现场直入模式</span>
+          <div class="user-chip"><el-icon><UserFilled /></el-icon><span>{{ currentAdmin?.display_name || currentAdmin?.username }}</span></div>
+          <el-button class="logout-button" @click="logout()">退出登录</el-button>
         </div>
       </el-header>
       <el-main class="content">
+        <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" show-icon /><el-button v-if="loadError" class="retry-button" :loading="loadingData" @click="loadAll">重新加载数据</el-button>
+        <p v-if="loadingData" role="status">正在加载活动数据…</p>
         <template v-if="section === 'dashboard' && dashboard">
           <section class="page-intro"><div><h2>活动概览</h2><p>{{ config?.title || '40秒能装挑战' }} · 现场进度与待办一目了然</p></div><el-button class="primary-button" @click="changeSection('score')"><el-icon><EditPen /></el-icon>开始录分</el-button></section>
           <section class="kpi-grid" aria-label="活动关键数据">
@@ -45,13 +61,13 @@
 
         <template v-if="section === 'score'">
           <section class="page-intro"><div><h2>登记挑战成绩</h2><p>查询参赛者后，填写现场确认的有效道具数量。</p></div></section>
-          <section class="panel"><header><div><h3>查找参赛者</h3><p>支持姓名、手机号或号码牌；修改成绩只会更新当前分数，删除成绩会保留报名资料。</p></div></header><div class="section-actions"><el-input v-model="keyword" clearable placeholder="姓名、手机号或号码牌" @keyup.enter="searchRegistrations"><template #prefix><el-icon><Search /></el-icon></template></el-input><el-button class="primary-button" @click="searchRegistrations">查询</el-button><el-button type="danger" plain :disabled="!registrations.some((row) => row.score != null)" @click="deleteAllScores">清空已录分</el-button></div><el-table :data="registrations" @row-click="selectRegistration"><el-table-column prop="number_plate" label="号码牌" width="130" /><el-table-column prop="name" label="姓名" /><el-table-column prop="phone" label="手机号" /><el-table-column prop="score" label="当前分数" /><el-table-column prop="status" label="状态" /><el-table-column label="操作" width="220"><template #default="scope"><el-button text class="table-action" @click.stop="selectRegistration(scope.row)">{{ scope.row.score == null ? '录分' : '修改分数' }}</el-button><el-button v-if="scope.row.score != null" text type="danger" @click.stop="deleteScore(scope.row)">删除分数</el-button></template></el-table-column></el-table></section>
+          <section class="panel"><header><div><h3>查找参赛者</h3><p>支持姓名、手机号或号码牌；修改成绩只会更新当前分数，删除成绩会保留报名资料。</p></div></header><div class="section-actions"><el-input v-model="keyword" clearable placeholder="姓名、手机号或号码牌" @keyup.enter="searchRegistrations"><template #prefix><el-icon><Search /></el-icon></template></el-input><el-button class="primary-button" @click="searchRegistrations">查询</el-button><el-button v-if="isAdmin" type="danger" plain :disabled="!registrations.some((row) => row.score != null)" @click="deleteAllScores">清空已录分</el-button></div><el-table :data="registrations" @row-click="selectRegistration"><el-table-column prop="number_plate" label="号码牌" width="130" /><el-table-column prop="name" label="姓名" /><el-table-column prop="phone" label="手机号" /><el-table-column prop="score" label="当前分数" /><el-table-column prop="status" label="状态" /><el-table-column label="操作" width="220"><template #default="scope"><el-button text class="table-action" @click.stop="selectRegistration(scope.row)">{{ scope.row.score == null ? '录分' : '修改分数' }}</el-button><el-button v-if="isAdmin && scope.row.score != null" text type="danger" @click.stop="deleteScore(scope.row)">删除分数</el-button></template></el-table-column></el-table></section>
           <section v-if="selectedRegistration && config" class="panel score-panel"><header><div><h3>{{ selectedRegistration.score == null ? '正在录入' : '正在修改' }}：{{ selectedRegistration.name }}（{{ selectedRegistration.number_plate }}）</h3><p>系统会根据有效数量自动计算总分。</p></div></header><el-alert :title="selectedRegistration.score == null ? '只填写现场确认已完全装入且挑战结束未掉落的数量。' : '修改后将覆盖该参赛者当前成绩，并同步用户端成绩与奖励。'" :type="selectedRegistration.score == null ? 'warning' : 'info'" :closable="false" show-icon /><el-table :data="config.score_items"><el-table-column prop="name" label="道具" /><el-table-column label="分值"><template #default="scope">{{ scope.row.points }} 分/个</template></el-table-column><el-table-column label="上限"><template #default="scope">{{ scope.row.max_quantity ?? '不限' }}</template></el-table-column><el-table-column label="有效数量" width="180"><template #default="scope"><el-input-number v-model="scoreForm[scope.row.id]" :min="0" :max="scope.row.max_quantity ?? 100" /></template></el-table-column></el-table><div class="save-score"><strong>预计总分：<b>{{ scorePreview }}</b> 分</strong><el-button class="primary-button" :loading="busy" @click="saveScore">{{ selectedRegistration.score == null ? '保存成绩' : '保存修改' }}</el-button></div></section>
         </template>
 
         <template v-if="section === 'ranking'">
           <section class="page-intro"><div><h2>排行榜与最终抽奖</h2><p>分数相同的参赛者并列排名；最终抽奖结果只会保存一次。</p></div></section>
-          <section class="two-column"><article class="panel"><header><div><h3>全场排行榜</h3><p>按已登记的总分排序；后台显示现场登记姓名和手机号，便于和登记表核对</p></div></header><el-table :data="leaderboard?.entries || []"><el-table-column prop="rank" label="排名" width="80" /><el-table-column prop="number_plate" label="号码牌" /><el-table-column prop="name" label="现场姓名" /><el-table-column prop="phone" label="手机号" /><el-table-column prop="score" label="分数" /><el-table-column prop="title" label="奖励等级" /></el-table></article><aside class="panel draw-panel"><header><div><h3>最终抽奖</h3><p>赛事结束后由工作人员执行</p></div></header><p>达到 <b>{{ drawCandidates?.threshold ?? config?.draw_threshold }}</b> 分的参赛者可参与抽奖。</p><strong class="candidate-number">{{ drawCandidates?.items.length ?? 0 }}<small>人符合资格</small></strong><el-button class="primary-button" :disabled="(drawCandidates?.items.length ?? 0) < 2" @click="runDraw">随机抽取两位获奖者</el-button><el-alert v-if="drawResult" class="draw-alert" type="success" :closable="false" :title="drawResult.already_drawn ? '本活动已执行过抽奖' : '抽奖结果已保存'" /><ul v-if="drawResult" class="winner-list"><li v-for="winner in drawResult.results" :key="winner.prize_rank">第{{ winner.prize_rank }}名奖：报名编号 #{{ winner.registration_id }} · {{ winner.prize_name }}</li></ul><p class="hint">群内通知获奖者，结果保存后不可重复抽取。</p></aside></section>
+          <section class="two-column"><article class="panel"><header><div><h3>全场排行榜</h3><p>按已登记的总分排序；后台显示现场登记姓名和手机号，便于和登记表核对</p></div></header><el-table :data="leaderboard?.entries || []"><el-table-column prop="rank" label="排名" width="80" /><el-table-column prop="number_plate" label="号码牌" /><el-table-column prop="name" label="现场姓名" /><el-table-column prop="phone" label="手机号" /><el-table-column prop="score" label="分数" /><el-table-column prop="title" label="奖励等级" /></el-table></article><aside class="panel draw-panel"><header><div><h3>最终抽奖</h3><p>赛事结束后由工作人员执行</p></div></header><p>达到 <b>{{ drawCandidates?.threshold ?? config?.draw_threshold }}</b> 分的参赛者可参与抽奖。</p><strong class="candidate-number">{{ drawCandidates?.items.length ?? 0 }}<small>人符合资格</small></strong><el-button v-if="isAdmin" class="primary-button" :disabled="(drawCandidates?.items.length ?? 0) < 2" @click="runDraw">随机抽取两位获奖者</el-button><el-alert v-if="drawResult" class="draw-alert" type="success" :closable="false" :title="drawResult.already_drawn ? '本活动已执行过抽奖' : '抽奖结果已保存'" /><ul v-if="drawResult" class="winner-list"><li v-for="winner in drawResult.results" :key="winner.prize_rank">第{{ winner.prize_rank }}名奖：报名编号 #{{ winner.registration_id }} · {{ winner.prize_name }}</li></ul><p class="hint">群内通知获奖者，结果保存后不可重复抽取。</p></aside></section>
         </template>
 
         <template v-if="section === 'settings' && config">
@@ -86,10 +102,56 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { Bell, EditPen, Odometer, Search, Setting, Trophy, UserFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { adminApi, type Activity, type Dashboard, type DrawResult, type Leaderboard, type MediaAsset, type Registration, type ScoreItem } from './services/api'
+import brandLogo from '../../shared/branding/flipbelt.svg'
+import { adminApi, clearAdminToken, hasAdminToken, saveAdminToken, type Admin, type Activity, type Dashboard, type DrawResult, type Leaderboard, type MediaAsset, type Registration, type ScoreItem } from './services/api'
+
+const authenticated = ref(hasAdminToken())
+const currentAdmin = ref<Admin>()
+const isAdmin = computed(() => currentAdmin.value?.role === 'admin')
+const loggingIn = ref(false)
+const loginError = ref('')
+const loadError = ref('')
+const loadingData = ref(false)
+const loginForm = reactive({ username: '', password: '' })
+let sessionGeneration = 0
+
+function logout(message = '') {
+  sessionGeneration += 1
+  clearAdminToken()
+  authenticated.value = false
+  currentAdmin.value = undefined
+  dashboard.value = undefined
+  config.value = undefined
+  registrations.value = []
+  leaderboard.value = undefined
+  selectedRegistration.value = undefined
+  drawCandidates.value = undefined
+  drawResult.value = undefined
+  mediaSlots.value = []
+  loginForm.password = ''
+  loginError.value = message
+  loadError.value = ''
+  section.value = 'dashboard'
+}
+function onUnauthorized() { logout('登录已过期，请重新登录') }
+async function login() {
+  if (loggingIn.value) return
+  if (!loginForm.username.trim() || !loginForm.password) { loginError.value = '请填写账号和密码'; return }
+  loggingIn.value = true
+  loginError.value = ''
+  try {
+    const result = await adminApi.login(loginForm.username.trim(), loginForm.password)
+    saveAdminToken(result.access_token)
+    currentAdmin.value = result.admin
+    loginForm.password = ''
+    authenticated.value = true
+    await loadAll()
+  } catch (err) { loginError.value = err instanceof Error ? err.message : '登录失败，请重试' }
+  finally { loggingIn.value = false }
+}
 
 type MediaSlot = MediaAsset & { type: 'video' | 'image' | 'link'; accept?: string; help: string }
 
@@ -116,14 +178,37 @@ const stats = computed(() => dashboard.value ? [
 ] : [])
 const scoredRate = computed(() => !dashboard.value?.registered_count ? 0 : Math.round(dashboard.value.scored_count / dashboard.value.registered_count * 100))
 const dashboardBars = computed(() => dashboard.value ? [
-  { label: '报名完成度', value: dashboard.value.registered_count, suffix: ' 人', percentage: 100, color: '#6366f1' },
+  { label: '报名完成度', value: dashboard.value.registered_count, suffix: ' 人', percentage: 100, color: '#526c2b' },
   { label: '成绩登记率', value: scoredRate.value, suffix: '%', percentage: scoredRate.value, color: '#10b981' },
   { label: '抽奖资格人数', value: dashboard.value.draw_qualified_count, suffix: ' 人', percentage: dashboard.value.scored_count ? Math.round(dashboard.value.draw_qualified_count / dashboard.value.scored_count * 100) : 0, color: '#f59e0b' },
 ] : [])
 const scorePreview = computed(() => config.value?.score_items.reduce((sum, item) => sum + item.points * (scoreForm[item.id] || 0), 0) ?? 0)
 
 function syncMediaSlots(assets: MediaAsset[]) { mediaSlots.value = mediaSlotDefinitions.map((definition) => ({ ...definition, ...(assets.find((asset) => asset.kind === definition.kind) || { url: '' }) })) }
-async function loadAll() { try { const [dash, loadedConfig, ranks, candidates] = await Promise.all([adminApi.dashboard(), adminApi.config(), adminApi.leaderboard(), adminApi.drawCandidates()]); dashboard.value = dash; config.value = loadedConfig; syncMediaSlots(loadedConfig.media_assets); leaderboard.value = ranks; drawCandidates.value = candidates } catch (err) { ElMessage.error(err instanceof Error ? err.message : '数据加载失败') } }
+async function loadAll() {
+  if (!authenticated.value) return
+  const generation = sessionGeneration
+  loadingData.value = true
+  loadError.value = ''
+  try {
+    if (!currentAdmin.value) {
+      const admin = await adminApi.me()
+      if (generation !== sessionGeneration) return
+      currentAdmin.value = admin
+    }
+    const [dash, loadedConfig, ranks, candidates] = await Promise.all([adminApi.dashboard(), adminApi.config(), adminApi.leaderboard(), adminApi.drawCandidates()])
+    if (generation !== sessionGeneration) return
+    dashboard.value = dash
+    config.value = loadedConfig
+    syncMediaSlots(loadedConfig.media_assets)
+    leaderboard.value = ranks
+    drawCandidates.value = candidates
+  } catch (err) {
+    if (generation === sessionGeneration) loadError.value = err instanceof Error ? err.message : '数据加载失败'
+  } finally {
+    if (generation === sessionGeneration) loadingData.value = false
+  }
+}
 async function changeSection(value: string) { section.value = value; if (value === 'score') await searchRegistrations(); if (value === 'ranking') await loadAll() }
 async function searchFromTop() { keyword.value = globalSearch.value; await changeSection('score') }
 async function searchRegistrations() { try { registrations.value = (await adminApi.registrations(keyword.value)).items } catch (err) { ElMessage.error(err instanceof Error ? err.message : '查询失败') } }
@@ -183,5 +268,13 @@ function imageDimensions(file: File) { return new Promise<{ width: number; heigh
 function videoDimensions(file: File) { return new Promise<{ width: number; height: number }>((resolve, reject) => { const url = URL.createObjectURL(file); const video = document.createElement('video'); video.preload = 'metadata'; video.onloadedmetadata = () => { URL.revokeObjectURL(url); resolve({ width: video.videoWidth, height: video.videoHeight }) }; video.onerror = () => { URL.revokeObjectURL(url); reject(new Error('无法读取视频信息，请确认文件为 MP4/H.264')) }; video.src = url }) }
 async function validateMediaFile(media: MediaSlot, file: File) { if (media.type === 'video') { if (file.type !== 'video/mp4' && !file.name.toLowerCase().endsWith('.mp4')) throw new Error('视频必须为 MP4/H.264'); const size = await videoDimensions(file); if (size.width !== 1080 || size.height !== 1920) throw new Error(`视频尺寸为 ${size.width}×${size.height}，要求 1080×1920`) } else if (!['douyin_qr', 'taobao_qr'].includes(media.kind)) { if (!['image/png', 'image/webp'].includes(file.type)) throw new Error('竖版图片必须为 PNG 或 WebP'); const size = await imageDimensions(file); if (size.width !== 1080 || size.height !== 1920) throw new Error(`图片尺寸为 ${size.width}×${size.height}，要求 1080×1920`) } }
 async function uploadMedia(media: MediaSlot, file?: File) { if (!file) return; uploadingKind.value = media.kind; try { await validateMediaFile(media, file); const uploaded = await adminApi.uploadMedia(media, file); Object.assign(media, uploaded); ElMessage.success('素材已保存到当前服务器并同步到前台'); await loadAll() } catch (err) { ElMessage.error(err instanceof Error ? err.message : '上传失败') } finally { uploadingKind.value = '' } }
-onMounted(() => { void loadAll() })
+onMounted(async () => {
+  window.addEventListener('flipbelt-admin-unauthorized', onUnauthorized)
+  if (!authenticated.value) return
+  try { await loadAll() }
+  catch (err) {
+    if (authenticated.value) loadError.value = err instanceof Error ? err.message : '数据加载失败'
+  }
+})
+onUnmounted(() => window.removeEventListener('flipbelt-admin-unauthorized', onUnauthorized))
 </script>

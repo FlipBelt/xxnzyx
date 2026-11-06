@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app.api.dependencies import DbSession, get_current_participant
+from app.core.config import get_settings
 from app.models import ChallengeScore, Participant, ParticipantIdentity, Registration
 from app.schemas.activity import ParticipantAuthRequest, RegistrationCreate
 from app.services.activity import (
@@ -21,6 +23,27 @@ def normalize_phone(phone: str) -> str:
     return "".join(character for character in phone if character.isdigit())
 
 
+def validate_channel(channel: str) -> None:
+    if channel == "wechat" and get_settings().app_env not in {"development", "test"}:
+        raise HTTPException(status_code=400, detail="微信身份授权尚未配置，请使用现场H5入口")
+
+
+def registration_result(registration: Registration, *, existing: bool = False) -> dict[str, object]:
+    return {
+        "registration_id": registration.id,
+        "status": registration.status,
+        "access_token": create_access_token(f"participant:{registration.participant_id}", "participant"),
+        "token_type": "bearer",
+        "already_registered": existing,
+    }
+
+
+def verify_registration(registration: Registration, name: str, number_plate: str) -> None:
+    # 恢复必须核对完整报名资料；不再凭手机号签发身份。
+    if registration.name_snapshot != name.strip() or registration.number_plate != number_plate.strip():
+        raise HTTPException(status_code=409, detail="报名资料与已有记录不一致，请联系现场工作人员核对")
+
+
 @router.get("/activity/current")
 async def current_activity(session: DbSession) -> dict[str, object]:
     activity = await get_current_activity(session)
@@ -28,93 +51,85 @@ async def current_activity(session: DbSession) -> dict[str, object]:
 
 
 @router.post("/participant/login")
-async def participant_login(payload: ParticipantAuthRequest, session: DbSession) -> dict[str, str]:
-    identity = await session.scalar(
-        select(ParticipantIdentity).where(
-            ParticipantIdentity.channel == payload.channel,
-            ParticipantIdentity.external_id == payload.external_id.strip(),
-        )
+async def participant_login(payload: ParticipantAuthRequest, session: DbSession) -> dict[str, object]:
+    validate_channel(payload.channel)
+    activity = await get_activity_by_slug(session, payload.activity_slug)
+    phone = normalize_phone(payload.external_id)
+    if payload.channel not in {"h5", "dingtalk"} or len(phone) != 11:
+        raise HTTPException(status_code=400, detail="请通过H5填写完整报名资料恢复，或联系现场工作人员")
+    registration = await session.scalar(
+        select(Registration).where(Registration.activity_id == activity.id, Registration.phone_snapshot == phone)
     )
-    if identity is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="尚未报名，请先完成报名")
-    return {
-        "access_token": create_access_token(f"participant:{identity.participant_id}", "participant"),
-        "token_type": "bearer",
-    }
+    if registration is None:
+        raise HTTPException(status_code=404, detail="未找到匹配的报名资料")
+    verify_registration(registration, payload.name, payload.number_plate)
+    return registration_result(registration, existing=True)
 
 
 @router.post("/registrations", status_code=status.HTTP_201_CREATED)
 async def create_registration(payload: RegistrationCreate, session: DbSession) -> dict[str, object]:
+    validate_channel(payload.channel)
     activity = await get_activity_by_slug(session, payload.activity_slug)
-    if activity.status != "active":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="活动当前不可报名")
-
-    name = payload.name.strip()
-    number_plate = payload.number_plate.strip()
+    activity_id = activity.id
+    name, number_plate = payload.name.strip(), payload.number_plate.strip()
     phone = normalize_phone(payload.phone)
     external_id = payload.external_id.strip()
-    if len(phone) != 11:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="手机号必须为11位数字")
-    if payload.channel in {"h5", "dingtalk"} and normalize_phone(external_id) != phone:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="H5身份需与报名手机号一致")
+    if not name or not number_plate or len(phone) != 11:
+        raise HTTPException(status_code=422, detail="请填写姓名、11位手机号和本场参赛号码牌")
+    if payload.channel in {"h5", "dingtalk"}:
+        if normalize_phone(external_id) != phone:
+            raise HTTPException(status_code=422, detail="H5身份需与报名手机号一致")
+        external_id = phone
 
-    identity = await session.scalar(
-        select(ParticipantIdentity).where(
-            ParticipantIdentity.channel == payload.channel,
-            ParticipantIdentity.external_id == external_id,
-        )
+    existing = await session.scalar(
+        select(Registration).where(Registration.activity_id == activity_id, Registration.phone_snapshot == phone)
     )
-    if identity is None:
-        participant = Participant(name=name, phone=phone)
-        session.add(participant)
-        await session.flush()
-        identity = ParticipantIdentity(
-            participant_id=participant.id,
-            channel=payload.channel,
-            external_id=external_id,
-        )
-        session.add(identity)
-    else:
-        participant = await session.get(Participant, identity.participant_id)
-        assert participant is not None
-
-    duplicate_identity = await session.scalar(
-        select(Registration.id).where(
-            Registration.activity_id == activity.id,
-            (Registration.participant_id == participant.id)
-            | (Registration.phone_snapshot == phone),
-        )
-    )
-    if duplicate_identity is not None:
-        await session.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该手机号已报名，可恢复原报名")
-
+    if existing is not None:
+        verify_registration(existing, name, number_plate)
+        return registration_result(existing, existing=True)
+    if activity.status != "active":
+        raise HTTPException(status_code=409, detail="活动当前不可报名")
     duplicate_plate = await session.scalar(
-        select(Registration.id).where(
-            Registration.activity_id == activity.id,
-            Registration.number_plate == number_plate,
-        )
+        select(Registration).where(Registration.activity_id == activity_id, Registration.number_plate == number_plate)
     )
     if duplicate_plate is not None:
-        await session.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该号码牌已被使用")
+        if duplicate_plate.phone_snapshot == phone:
+            verify_registration(duplicate_plate, name, number_plate)
+            return registration_result(duplicate_plate, existing=True)
+        raise HTTPException(status_code=409, detail="报名资料与已有记录冲突，请联系现场工作人员核对")
 
-    registration = Registration(
-        activity_id=activity.id,
-        participant_id=participant.id,
-        name_snapshot=name,
-        phone_snapshot=phone,
-        number_plate=number_plate,
-    )
-    session.add(registration)
-    await session.commit()
-    await session.refresh(registration)
-    return {
-        "registration_id": registration.id,
-        "status": registration.status,
-        "access_token": create_access_token(f"participant:{participant.id}", "participant"),
-        "token_type": "bearer",
-    }
+    try:
+        identity = await session.scalar(
+            select(ParticipantIdentity).where(
+                ParticipantIdentity.channel == payload.channel, ParticipantIdentity.external_id == external_id
+            )
+        )
+        if identity is None:
+            participant = Participant(name=name, phone=phone)
+            session.add(participant)
+            await session.flush()
+            participant_id = participant.id
+            session.add(ParticipantIdentity(participant_id=participant_id, channel=payload.channel, external_id=external_id))
+        else:
+            participant_id = identity.participant_id
+        registration = Registration(
+            activity_id=activity_id, participant_id=participant_id, name_snapshot=name,
+            phone_snapshot=phone, number_plate=number_plate,
+        )
+        session.add(registration)
+        await session.commit()
+        await session.refresh(registration)
+        return registration_result(registration)
+    except IntegrityError:
+        # 两个并发请求可能同时通过前置查询；数据库唯一约束是最终去重边界。
+        await session.rollback()
+        existing = await session.scalar(
+            select(Registration).where(Registration.activity_id == activity_id, Registration.phone_snapshot == phone)
+        )
+        if existing is not None:
+            verify_registration(existing, name, number_plate)
+            return registration_result(existing, existing=True)
+        raise HTTPException(status_code=409, detail="报名资料与已有记录冲突，请联系现场工作人员核对") from None
 
 
 @router.get("/me")

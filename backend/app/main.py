@@ -45,4 +45,4 @@ app.add_middleware(
 
 app.include_router(api_router, prefix=settings.api_v1_prefix)
 app.mount("/assets", StaticFiles(directory=PROJECT_ROOT / "assets"), name="assets")
-app.mount("/uploads", StaticFiles(directory=settings.local_upload_dir), name="uploads")
+app.mount("/uploads", StaticFiles(directory=settings.local_upload_dir, check_dir=False), name="uploads")

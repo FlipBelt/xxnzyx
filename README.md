@@ -59,12 +59,52 @@ Set-Location backend; uv run ruff check .; uv run pytest -q
 
 当前代码已经可以构建微信小程序包，H5 本地测试也以手机号做唯一身份。正式微信入口必须由后端使用小程序 AppID、AppSecret 通过 `wx.login` 的 code 换取 OpenID；这些平台凭据、备案主体、已备案域名与合法请求域名只能在微信主体准备完成后配置，不能用本地测试身份替代。
 
-## 当前测试服务器
+## 入口与发布配置
 
-已部署在公司 ECS 的同一 HTTP 入口下，避免占用额外公网端口：
+- 现场参赛入口：`https://nzyx.flipbeltchina.com/`。
+- 微信入口使用 `/wx-entry-20261106`；根地址和旧微信二维码路径跳转到新入口，避免继续使用旧WebView快照。
+- 正式域名后台目标：`https://nzyx.flipbeltchina.com/flipbelt-admin/`；由 `deploy/nzyx.flipbeltchina.com.conf` 中的专用路径提供，不回落到参赛端。
+- 以下IP入口为兼容入口，避免占用额外公网端口：
+
 
 - 参赛端：`http://121.41.164.222/flipbelt/`
 - 管理后台：`http://121.41.164.222/flipbelt-admin/`
 - API：`http://121.41.164.222/flipbelt-api/api/v1/health`
 
-服务器使用 PostgreSQL、独立 systemd 服务 `flipbelt-challenge`（仅监听 `127.0.0.1:18100`）和现有 Nginx 反向代理。待公司域名与 HTTPS 证书准备好后，应将以上 IP 地址替换为正式 HTTPS 域名，并重新构建用户端与后台。
+服务器使用 PostgreSQL、独立 systemd 服务 `flipbelt-challenge`（仅监听 `127.0.0.1:18100`）和 Nginx。域名版H5构建前设置 `TARO_PUBLIC_PATH=/`；兼容IP版使用 `TARO_PUBLIC_PATH=/flipbelt/`。后台保持 `VITE_BASE=/flipbelt-admin/`。
+
+## 登录与报名恢复
+
+后台接口始终验证登录，旧的 `ADMIN_AUTH_ENABLED=false` 不再提供旁路。正式环境拒绝文档中的开发默认密码。管理员可维护规则、补录、删除成绩及抽奖；录分人员可查询、录入及修正成绩。
+
+同一活动、手机号、姓名和号码牌完全匹配的重复报名返回原报名编号，不重复建档；工作人员补录的记录沿用同一恢复路径。不一致的资料需工作人员核对。恢复不再仅凭手机号签发身份，但完整资料匹配仍不等同于手机号持有验证。
+
+正式运行配置固定 `APP_ENV=production`，必须通过环境变量提供独立的 `JWT_SECRET`，至少32字符，禁止使用示例占位值。既有管理员账号与独立密钥必须在发布前确认；不把开发默认账号带入现场。
+
+## 品牌与移动端
+
+采用 [公司设计系统0.2.0](https://github.com/J21NIANYI/company-design-system) 的Experimental契约与候选语义映射：白/浅灰底、墨黑文字、荧黄绿主操作。共享样式与登记的墨黑Logo位于 `apps/shared/branding/`；Logo对应数字中心固定提交 `1a8d91a353f066e854b16dde4f243eba222faa90` 的 `frontend/public/logo.svg`，保持原比例和颜色。
+
+H5使用正常文档滚动，不锁定键盘打开前的页面高度。输入字号至少16 CSS像素，主操作可通过滚动和键盘到达；页面保持浏览器缩放能力。Chromium/WebKit模拟不代替iPhone微信真机验收。
+
+## 回归验证
+
+后端测试必须显式使用独立本地数据库，禁止指向现场库：
+
+```powershell
+$env:APP_ENV = 'test'
+$env:DATABASE_URL = 'sqlite+aiosqlite:///./local-tests.db'
+uv run --directory backend ruff check app tests ../tests/verify_nginx.py
+uv run --directory backend pytest -q
+```
+
+并发重试测试仅在PostgreSQL运行；SQLite下会跳过。使用独立PostgreSQL测试库时，以环境变量替换上述连接，五个并发报名请求应得到同一报名编号。
+
+`tests/ui-smoke.mjs` 针对构建产物启动仅监听本机的测试服务，使用合成API响应，覆盖两种浏览器、三种窄屏、聚焦及视口恢复、断网重试、回执丢失、后台登录过期和Logo加载。需要本地Playwright与Chromium/Chrome、WebKit；可通过 `PLAYWRIGHT_MODULE` 指定已安装模块的文件URL，无需修改业务依赖。
+
+```powershell
+node tests/ui-smoke.mjs
+python tests/verify_nginx.py
+```
+
+Nginx验证需要Docker与 `nginx:alpine`，只替换本地测试副本的TLS监听/证书行，沿用实际路径规则；不检查现场证书或执行发布。
