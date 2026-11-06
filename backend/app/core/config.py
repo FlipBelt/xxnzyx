@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import AnyHttpUrl, Field
+from pydantic import AnyHttpUrl, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -14,6 +14,7 @@ class Settings(BaseSettings):
         env_file=BASE_DIR / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        hide_input_in_errors=True,
     )
 
     app_name: str = "FLIPBELT 40秒能装挑战 API"
@@ -50,8 +51,14 @@ class Settings(BaseSettings):
     seed_demo_data: bool = True
     demo_admin_username: str = "admin"
     demo_admin_password: str = "admin123"
-    # 现场测试阶段可直接进入后台；正式上线时通过环境变量改为 true 恢复登录验证。
-    admin_auth_enabled: bool = False
+
+    @model_validator(mode="after")
+    def validate_production_secret(self) -> "Settings":
+        if self.app_env not in {"development", "test"} and (
+            len(self.jwt_secret) < 32 or self.jwt_secret == "replace-with-a-long-random-secret"
+        ):
+            raise ValueError("正式环境必须通过环境变量配置独立的JWT_SECRET（至少32字符）")
+        return self
 
 
 @lru_cache

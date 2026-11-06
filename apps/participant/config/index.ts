@@ -23,9 +23,12 @@ export default defineConfig({
   defineConstants: {
     __FLIPBELT_API_BASE__: JSON.stringify(apiBase)
   },
-  mini: {},
+  mini: {
+    imageUrlLoaderOption: { name: 'static/images/[name].[contenthash:8][ext]' }
+  },
   h5: {
     publicPath,
+    imageUrlLoaderOption: { name: 'static/images/[name].[contenthash:8][ext]' },
     router: { mode: 'hash' },
     // 发布后让入口与分包都带内容哈希，避免手机浏览器继续使用同名旧分包。
     webpackChain(chain) {

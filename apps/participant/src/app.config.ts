@@ -7,9 +7,9 @@ export default defineAppConfig({
     'pages/me/index'
   ],
   window: {
-    navigationBarBackgroundColor: '#1a1a2e',
-    navigationBarTextStyle: 'white',
+    navigationBarBackgroundColor: '#ffffff',
+    navigationBarTextStyle: 'black',
     navigationBarTitleText: 'FLIPBELT 能装挑战',
-    backgroundColor: '#172033'
+    backgroundColor: '#f6f7f6'
   }
 })

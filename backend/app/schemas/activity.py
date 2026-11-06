@@ -4,6 +4,9 @@ from pydantic import BaseModel, Field
 class ParticipantAuthRequest(BaseModel):
     channel: str = Field(pattern="^(wechat|h5|dingtalk)$")
     external_id: str = Field(min_length=1, max_length=160)
+    activity_slug: str = Field(min_length=1, max_length=80)
+    name: str = Field(min_length=1, max_length=80)
+    number_plate: str = Field(min_length=1, max_length=50)
 
 
 class RegistrationCreate(BaseModel):

@@ -8,7 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.concurrency import run_in_threadpool
 
-from app.api.dependencies import DbSession, get_current_admin
+from app.api.dependencies import DbSession, get_administrator, get_current_admin
+from app.core.config import get_settings
 from app.models import (
     ActivityConfigVersion,
     AdminUser,
@@ -112,6 +113,8 @@ def ensure_tiers_valid(tiers: list[RewardTierUpdate]) -> list[RewardTierUpdate]:
 
 @router.post("/login")
 async def admin_login(payload: AdminLoginRequest, session: DbSession) -> dict[str, object]:
+    if get_settings().app_env not in {"development", "test"} and payload.password == "admin123":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="请使用正式工作人员账号登录")
     admin = await session.scalar(select(AdminUser).where(AdminUser.username == payload.username.strip()))
     if admin is None or not admin.is_active or not verify_password(payload.password, admin.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名或密码错误")
@@ -120,6 +123,11 @@ async def admin_login(payload: AdminLoginRequest, session: DbSession) -> dict[st
         "token_type": "bearer",
         "admin": admin_payload(admin),
     }
+
+
+@router.get("/me")
+async def current_admin(admin: AdminUser = Depends(get_current_admin)) -> dict[str, object]:
+    return admin_payload(admin)
 
 
 @router.get("/dashboard")
@@ -202,7 +210,7 @@ async def list_registrations(
 async def create_manual_registration(
     payload: AdminRegistrationCreate,
     session: DbSession,
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_administrator),
 ) -> dict[str, object]:
     """现场数据失联时，由工作人员补录，随后可直接登记成绩。"""
     activity = await get_current_activity(session)
@@ -308,7 +316,7 @@ async def update_score(
 @router.delete("/scores")
 async def delete_all_scores(
     session: DbSession,
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_administrator),
 ) -> dict[str, int]:
     """Clear all entered scores for the current activity while keeping registrations."""
     activity = await get_current_activity(session)
@@ -345,7 +353,7 @@ async def delete_all_scores(
 async def delete_score(
     registration_id: int,
     session: DbSession,
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_administrator),
 ) -> dict[str, int | str]:
     """Remove one entered score and return the registration to the waiting state."""
     activity = await get_current_activity(session)
@@ -397,7 +405,7 @@ async def draw_candidates(session: DbSession, _: AdminUser = Depends(get_current
 
 
 @router.post("/draw")
-async def run_draw(session: DbSession, admin: AdminUser = Depends(get_current_admin)) -> dict[str, object]:
+async def run_draw(session: DbSession, admin: AdminUser = Depends(get_administrator)) -> dict[str, object]:
     activity = await get_current_activity(session)
     existing = list(
         (
@@ -469,7 +477,7 @@ async def get_config(session: DbSession, _: AdminUser = Depends(get_current_admi
 async def update_activity_settings(
     payload: ActivitySettingsUpdate,
     session: DbSession,
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_administrator),
 ) -> dict[str, object]:
     activity = await get_current_activity(session)
     for field, value in payload.model_dump().items():
@@ -483,7 +491,7 @@ async def update_activity_settings(
 async def replace_reward_tiers(
     payload: list[RewardTierUpdate],
     session: DbSession,
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_administrator),
 ) -> dict[str, object]:
     activity = await get_current_activity(session)
     tiers = ensure_tiers_valid(payload)
@@ -501,7 +509,7 @@ async def replace_reward_tiers(
 async def create_score_item(
     payload: ScoreItemUpdate,
     session: DbSession,
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_administrator),
 ) -> dict[str, object]:
     activity = await get_current_activity(session)
     existing = await session.scalar(
@@ -522,7 +530,7 @@ async def update_score_item(
     item_id: int,
     payload: ScoreItemUpdate,
     session: DbSession,
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_administrator),
 ) -> dict[str, object]:
     activity = await get_current_activity(session)
     item = await session.scalar(select(ScoreItem).where(ScoreItem.id == item_id, ScoreItem.activity_id == activity.id))
@@ -546,7 +554,7 @@ async def update_score_item(
 async def upsert_media_asset(
     payload: MediaAssetUpdate,
     session: DbSession,
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_administrator),
 ) -> dict[str, object]:
     activity = await get_current_activity(session)
     media = await session.scalar(
@@ -566,7 +574,7 @@ async def upsert_media_asset(
 @router.post("/config/media/upload", status_code=status.HTTP_201_CREATED)
 async def upload_media_asset(
     session: DbSession,
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_administrator),
     kind: str = Form(..., min_length=1, max_length=40),
     label: str = Form(..., min_length=1, max_length=100),
     file: UploadFile = File(...),
