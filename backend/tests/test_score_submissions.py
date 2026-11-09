@@ -1,12 +1,16 @@
 import asyncio
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import update
 
 from app.core.config import get_settings
+from app.db.session import AsyncSessionLocal
 from app.main import app
+from app.models import Registration
 
 
 def setup_score(client: TestClient) -> tuple[dict, dict, dict]:
@@ -79,3 +83,40 @@ def test_concurrent_guarded_submissions_on_postgresql() -> None:
     with TestClient(app) as client:
         headers, _, draft = setup_score(client)
         client.portal.call(submit_simultaneously, headers, draft)
+
+
+def test_pending_registration_page_uses_chronology_and_excludes_scored_cursor() -> None:
+    async def date_rows(rows: list[int], times: list[datetime]) -> None:
+        async with AsyncSessionLocal() as session:
+            for row, timestamp in zip(rows, times, strict=True):
+                await session.execute(update(Registration).where(Registration.id == row).values(created_at=timestamp))
+            await session.commit()
+
+    with TestClient(app) as client:
+        headers, _, draft = setup_score(client)
+        ids = [draft['registration_id']]
+        for _ in range(2):
+            code = uuid4().hex[:10]
+            row = client.post('/api/v1/admin/registrations', headers=headers, json={
+                'name': '待录分测试', 'phone': f'136{int(code, 16) % 100_000_000:08d}', 'number_plate': f'QUEUE-{code}',
+            })
+            assert row.status_code == 201, row.text
+            ids.append(row.json()['id'])
+        newest_time = datetime.now(UTC) + timedelta(days=3650)
+        client.portal.call(date_rows, ids, [newest_time, newest_time - timedelta(hours=2), newest_time - timedelta(days=1)])
+
+        url = '/api/v1/admin/registrations'
+        first = client.get(url, params={'pending_only': True, 'limit': 2}, headers=headers).json()
+        assert [row['id'] for row in first['items']] == ids[:2]
+        assert first['has_more'] is True
+        assert datetime.fromisoformat(first['items'][0]['registered_at']) == newest_time
+
+        zero = {**draft, 'registration_id': ids[1], 'items': [{**draft['items'][0], 'quantity': 0}]}
+        score = client.post('/api/v1/admin/score-submissions', headers=headers, json=zero)
+        assert score.status_code == 200 and score.json()['total_score'] == 0
+        next_page = client.get(url, params={'pending_only': True, 'limit': 1, 'before_id': ids[1]}, headers=headers).json()
+        assert [row['id'] for row in next_page['items']] == ids[2:]
+        fresh = client.get(url, params={'pending_only': True, 'limit': 2}, headers=headers).json()
+        assert [row['id'] for row in fresh['items']] == [ids[0], ids[2]]
+        search = client.get(url, params={'keyword': first['items'][1]['number_plate']}, headers=headers).json()
+        assert search['items'][0]['id'] == ids[1] and search['items'][0]['score'] == 0

@@ -69,6 +69,23 @@
           <section class="kpi-grid" aria-label="活动关键数据">
             <article v-for="stat in stats" :key="stat.label" class="kpi-card"><div><p>{{ stat.label }}</p><strong>{{ stat.value }}</strong><small>{{ stat.hint }}</small></div><span :class="['kpi-icon', stat.tone]"><el-icon><component :is="stat.icon" /></el-icon></span></article>
           </section>
+        </template>
+        <section v-if="section === 'dashboard'" class="panel home-ranking" aria-labelledby="home-ranking-title">
+          <header>
+            <div><h2 id="home-ranking-title">实时排行榜</h2><p>前 10 名<span v-if="homeRankingUpdated"> · 北京时间 {{ homeRankingUpdated }} 更新</span></p></div>
+            <button type="button" class="home-ranking-link" @click="changeSection('ranking')">完整榜单 ›</button>
+          </header>
+          <p v-if="homeRankingError" class="home-ranking-note" role="status">{{ homeRankingError }}
+            <button type="button" class="home-ranking-link" :disabled="homeRankingLoading" @click="loadHomeRanking">重试</button>
+          </p>
+          <ol v-if="homeRanking?.entries.length" class="home-ranking-rows">
+            <li v-for="entry in homeRanking.entries" :key="entry.registration_id">
+              <span class="home-ranking-place">{{ entry.rank }}</span><strong>#{{ entry.number_plate }}</strong><span>{{ entry.score }} 分</span>
+            </li>
+          </ol>
+          <p v-else-if="!homeRankingError" class="home-ranking-note">{{ homeRanking ? '暂无已登记成绩' : '正在读取排行榜…' }}</p>
+        </section>
+        <template v-if="!isMobile && section === 'dashboard' && dashboard">
           <section class="dashboard-grid">
             <article class="panel progress-panel"><header><div><h3>现场进度</h3><p>按当前报名与成绩登记数据统计</p></div><span class="panel-badge">实时</span></header>
               <div v-for="item in dashboardBars" :key="item.label" class="progress-row"><div class="progress-label"><span>{{ item.label }}</span><strong>{{ item.value }}<small>{{ item.suffix }}</small></strong></div><el-progress :percentage="item.percentage" :show-text="false" :stroke-width="9" :color="item.color" /></div>
@@ -98,7 +115,31 @@
           @supplement="openSupplement" @changed="loadDashboard" />
         <template v-if="!isMobile && section === 'score'">
           <section class="page-intro"><div><h2>登记挑战成绩</h2><p>查询参赛者后，填写现场确认的有效道具数量。</p></div></section>
-          <section class="panel"><header><div><h3>查找参赛者</h3><p>支持姓名、手机号或号码牌；修改成绩只会更新当前分数，删除成绩会保留报名资料。</p></div></header><div class="section-actions"><el-input v-model="keyword" clearable placeholder="姓名、手机号或号码牌" @keyup.enter="searchRegistrations"><template #prefix><el-icon><Search /></el-icon></template></el-input><el-button class="primary-button" @click="searchRegistrations">查询</el-button><el-button v-if="isAdmin" type="danger" plain :disabled="!registrations.some((row) => row.score != null)" @click="deleteAllScores">清空已录分</el-button></div><el-table :data="registrations" @row-click="selectRegistration"><el-table-column prop="number_plate" label="号码牌" width="130" /><el-table-column prop="name" label="姓名" /><el-table-column prop="phone" label="手机号" /><el-table-column prop="score" label="当前分数" /><el-table-column prop="status" label="状态" /><el-table-column label="操作" width="220"><template #default="scope"><el-button text class="table-action" @click.stop="selectRegistration(scope.row)">{{ scope.row.score == null ? '录分' : '修改分数' }}</el-button><el-button v-if="isAdmin && scope.row.score != null" text type="danger" @click.stop="deleteScore(scope.row)">删除分数</el-button></template></el-table-column></el-table></section>
+          <section class="panel">
+            <header><div><h3>查找参赛者</h3><p>支持姓名、手机号或号码牌；修改成绩只会更新当前分数，删除成绩会保留报名资料。</p></div></header>
+            <div class="section-actions">
+              <el-input v-model="keyword" clearable placeholder="姓名、手机号或号码牌" @keyup.enter="searchRegistrations" @clear="searchRegistrations"><template #prefix><el-icon><Search /></el-icon></template></el-input>
+              <el-button class="primary-button" @click="searchRegistrations">查询</el-button>
+              <el-button v-if="isAdmin" type="danger" plain :disabled="!dashboard?.scored_count" @click="deleteAllScores">清空已录分</el-button>
+            </div>
+            <div v-if="!desktopFilter" class="pending-queue-heading">
+              <div><h3>待录分</h3><small>按报名日期 · 北京时间</small></div><el-button :loading="pendingLoading" @click="loadPending()">刷新名单</el-button>
+            </div>
+            <p v-if="!desktopFilter && pendingError" role="status">{{ pendingError }}</p>
+            <p v-else-if="!desktopGroups.length" role="status">{{ desktopFilter ? desktopSearching ? '正在查询…' : '未找到匹配的报名' : pendingLoading ? '正在读取待录分名单…' : '当前没有待录分人员。' }}</p>
+            <section v-for="group in desktopGroups" :key="group.date" class="pending-day">
+              <h4 v-if="group.date">{{ group.date }}</h4>
+              <el-table :data="group.entries" @row-click="selectRegistration">
+                <el-table-column prop="number_plate" label="号码牌" width="130" /><el-table-column prop="name" label="姓名" /><el-table-column prop="phone" label="手机号" />
+                <el-table-column prop="score" label="当前分数" /><el-table-column prop="status" label="状态" />
+                <el-table-column label="操作" width="220"><template #default="scope">
+                  <el-button text class="table-action" @click.stop="selectRegistration(scope.row)">{{ scope.row.score == null ? '录分' : '修改分数' }}</el-button>
+                  <el-button v-if="isAdmin && scope.row.score != null" text type="danger" @click.stop="deleteScore(scope.row)">删除分数</el-button>
+                </template></el-table-column>
+              </el-table>
+            </section>
+            <el-button v-if="!desktopFilter && pendingMore" class="retry-button" :loading="pendingLoading" @click="loadPending(true)">查看更多待录分</el-button>
+          </section>
           <section v-if="selectedRegistration && config" class="panel score-panel"><header><div><h3>{{ selectedRegistration.score == null ? '正在录入' : '正在修改' }}：{{ selectedRegistration.name }}（{{ selectedRegistration.number_plate }}）</h3><p>系统会根据有效数量自动计算总分。</p></div></header><el-alert :title="selectedRegistration.score == null ? '只填写现场确认已完全装入且挑战结束未掉落的数量。' : '修改后将覆盖该参赛者当前成绩，并同步用户端成绩与奖励。'" :type="selectedRegistration.score == null ? 'warning' : 'info'" :closable="false" show-icon /><el-table :data="config.score_items"><el-table-column prop="name" label="道具" /><el-table-column label="分值"><template #default="scope">{{ scope.row.points }} 分/个</template></el-table-column><el-table-column label="上限"><template #default="scope">{{ scope.row.max_quantity ?? '不限' }}</template></el-table-column><el-table-column label="有效数量" width="180"><template #default="scope"><el-input-number v-model="scoreForm[scope.row.id]" :min="0" :max="scope.row.max_quantity ?? 100" /></template></el-table-column></el-table><div class="save-score"><strong>预计总分：<b>{{ scorePreview }}</b> 分</strong><el-button class="primary-button" :loading="busy" @click="saveScore">{{ selectedRegistration.score == null ? '保存成绩' : '保存修改' }}</el-button></div></section>
         </template>
 
@@ -194,7 +235,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { Bell, EditPen, Menu, Odometer, Search, Setting, Trophy, UserFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import brandLogo from '../../shared/branding/flipbelt.svg'
@@ -202,6 +243,7 @@ import MobileScore from './MobileScore.vue'
 import MobileSettings from './MobileSettings.vue'
 import { adminApi, ApiError, clearAdminToken, hasAdminToken, newOperationId, saveAdminToken, type Admin, type Activity, type Dashboard, type DrawResult, type Leaderboard, type MediaAsset, type Registration, type ScoreItem, type ScoreSubmission } from './services/api'
 import { scoreDrafts } from './services/scoreDrafts'
+import { usePendingRegistrations } from './services/pendingRegistrations'
 
 const authenticated = ref(hasAdminToken())
 const currentAdmin = ref<Admin>()
@@ -216,6 +258,8 @@ const isMobile = ref(mobileQuery.matches), menuOpen = ref(false)
 const menuButton = ref<HTMLButtonElement>(), pageHeading = ref<HTMLElement>()
 const mobileScore = ref<InstanceType<typeof MobileScore>>(), mobileSettings = ref<InstanceType<typeof MobileSettings>>()
 const dashboardError = ref(''), dashboardUpdated = ref(''), rankingError = ref('')
+const homeRanking = ref<Leaderboard>(), homeRankingUpdated = ref(''), homeRankingError = ref(''), homeRankingLoading = ref(false)
+let homeRankingTimer: number | undefined
 const rankingView = ref<'list' | 'draw'>('list'), loadingRanking = ref(false)
 const drawError = ref(''), drawUncertain = ref(false), drawBusy = ref(false)
 const supplementError = ref(''), supplementConflict = ref(false)
@@ -229,8 +273,14 @@ function resetSession(message = '') {
   authenticated.value = false
   currentAdmin.value = undefined
   dashboard.value = undefined
+  homeRanking.value = undefined
+  homeRankingUpdated.value = homeRankingError.value = ''
+  homeRankingLoading.value = false
   config.value = undefined
   registrations.value = []
+  clearPending()
+  desktopFilter.value = ''
+  desktopSearching.value = false
   leaderboard.value = undefined
   selectedRegistration.value = undefined
   drawCandidates.value = undefined
@@ -297,6 +347,12 @@ const busy = ref(false), section = ref('dashboard'), dashboard = ref<Dashboard>(
 const mediaSlots = ref<MediaSlot[]>([]), uploadingKind = ref('')
 const scoreForm = reactive<Record<number, number>>({})
 const supplementForm = reactive({ name: '', phone: '', number_plate: '' })
+const desktopFilter = ref(''), desktopSearching = ref(false)
+const { groups: pendingGroups, loading: pendingLoading, hasMore: pendingMore, error: pendingError,
+  load: loadPending, clear: clearPending } = usePendingRegistrations()
+const desktopGroups = computed(() => desktopFilter.value
+  ? (registrations.value.length ? [{ date: '', entries: registrations.value }] : []) : pendingGroups.value)
+let registrationRequest = 0
 let desktopAttempt: ScoreSubmission | undefined
 const mobileNavigation = computed(() => [
   { id: 'dashboard', label: '现场概况' }, { id: 'score', label: '登记成绩' },
@@ -336,6 +392,23 @@ async function loadDashboard() {
     dashboardUpdated.value = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
   } catch (error) { if (generation === sessionGeneration) dashboardError.value = error instanceof Error ? error.message : '统计读取失败' }
 }
+async function loadHomeRanking() {
+  if (!authenticated.value || section.value !== 'dashboard' || document.hidden || homeRankingLoading.value) return
+  const generation = sessionGeneration
+  homeRankingLoading.value = true
+  try {
+    const value = await adminApi.leaderboard(0, 10)
+    if (generation !== sessionGeneration) return
+    homeRanking.value = value
+    homeRankingError.value = ''
+    homeRankingUpdated.value = new Date().toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
+  } catch {
+    if (generation === sessionGeneration) homeRankingError.value = homeRanking.value ? '刷新失败，显示上次成功榜单' : '排行榜读取失败'
+  } finally {
+    if (generation === sessionGeneration) homeRankingLoading.value = false
+  }
+}
+watch([section, authenticated], () => void loadHomeRanking())
 async function loadLeaderboard(more = false) {
   if (loadingRanking.value) return
   loadingRanking.value = true
@@ -377,7 +450,7 @@ async function loadAll() {
       setAdmin(admin)
     }
     const tasks: Promise<unknown>[] = [refreshConfig(), loadDashboard()]
-    if (!isMobile.value) tasks.push(loadLeaderboard(), loadDraw())
+    if (!isMobile.value && section.value === 'ranking') tasks.push(loadLeaderboard(), loadDraw())
     await Promise.all(tasks)
   } catch (err) {
     if (generation === sessionGeneration) loadError.value = err instanceof Error ? err.message : '数据加载失败'
@@ -408,7 +481,11 @@ async function changeSection(value: string) {
 function openMenu() { menuSection = section.value; menuOpen.value = true }
 function restoreMenuFocus() { (menuSection !== section.value ? pageHeading.value : menuButton.value)?.focus({ preventScroll: true }) }
 function chooseMobileSection(value: string) { menuOpen.value = false; void changeSection(value) }
-function updateViewport(event: MediaQueryListEvent) { isMobile.value = event.matches; menuOpen.value = false }
+function updateViewport(event: MediaQueryListEvent) {
+  isMobile.value = event.matches
+  menuOpen.value = false
+  if (!isMobile.value && section.value === 'score') void searchRegistrations()
+}
 async function openSupplement(term: string) {
   await changeSection('supplement')
   if (section.value === 'supplement' && !supplementForm.number_plate && /^\d{1,10}$/.test(term)) supplementForm.number_plate = term
@@ -419,7 +496,23 @@ async function findExistingSupplement() {
   if (section.value === 'score') await mobileScore.value?.find(term)
 }
 async function searchFromTop() { keyword.value = globalSearch.value; if (section.value === 'score') await searchRegistrations(); else await changeSection('score') }
-async function searchRegistrations() { try { registrations.value = (await adminApi.registrations(keyword.value)).items } catch (err) { ElMessage.error(err instanceof Error ? err.message : '查询失败') } }
+async function searchRegistrations() {
+  const generation = sessionGeneration
+  const request = ++registrationRequest
+  const query = keyword.value.trim()
+  if (query !== desktopFilter.value) registrations.value = []
+  desktopFilter.value = query
+  desktopSearching.value = Boolean(query)
+  if (!query) { await loadPending(); return }
+  try {
+    const result = await adminApi.registrations(query)
+    if (generation === sessionGeneration && request === registrationRequest) registrations.value = result.items
+  } catch (err) {
+    if (generation === sessionGeneration && request === registrationRequest) ElMessage.error(err instanceof Error ? err.message : '查询失败')
+  } finally {
+    if (generation === sessionGeneration && request === registrationRequest) desktopSearching.value = false
+  }
+}
 function selectRegistration(row: Registration) {
   desktopAttempt = undefined
   selectedRegistration.value = row
@@ -595,11 +688,19 @@ function uploadMobileMedia(media: MediaSlot, event: Event) {
 onMounted(async () => {
   window.addEventListener('flipbelt-admin-unauthorized', onUnauthorized)
   mobileQuery.addEventListener('change', updateViewport)
+  document.addEventListener('visibilitychange', loadHomeRanking)
+  homeRankingTimer = window.setInterval(loadHomeRanking, 10_000)
+  void loadHomeRanking()
   if (!authenticated.value) return
   try { await loadAll() }
   catch (err) {
     if (authenticated.value) loadError.value = err instanceof Error ? err.message : '数据加载失败'
   }
 })
-onUnmounted(() => { window.removeEventListener('flipbelt-admin-unauthorized', onUnauthorized); mobileQuery.removeEventListener('change', updateViewport) })
+onUnmounted(() => {
+  window.removeEventListener('flipbelt-admin-unauthorized', onUnauthorized)
+  mobileQuery.removeEventListener('change', updateViewport)
+  document.removeEventListener('visibilitychange', loadHomeRanking)
+  window.clearInterval(homeRankingTimer)
+})
 </script>

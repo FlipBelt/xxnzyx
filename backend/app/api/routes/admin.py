@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from datetime import UTC
 from secrets import SystemRandom
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -179,6 +180,8 @@ async def list_registrations(
     keyword: str | None = Query(default=None, max_length=80),
     limit: int | None = Query(default=None, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    pending_only: bool = False,
+    before_id: int | None = Query(default=None, ge=1),
 ) -> dict[str, object]:
     activity = await get_current_activity(session)
     query = (
@@ -187,6 +190,19 @@ async def list_registrations(
         .options(selectinload(Registration.score).selectinload(ChallengeScore.details))
     )
     keyword = (keyword or "").strip()
+    if before_id is not None:
+        if not pending_only or keyword or offset:
+            raise HTTPException(status_code=422, detail="待录分分页不能与关键词或偏移量同时使用")
+        before_time = await session.scalar(select(Registration.created_at).where(
+            Registration.id == before_id, Registration.activity_id == activity.id,
+        ))
+        if before_time is None:
+            raise HTTPException(status_code=422, detail="名单已变化，请刷新待录分名单")
+        query = query.where(or_(Registration.created_at < before_time, and_(
+            Registration.created_at == before_time, Registration.id < before_id,
+        )))
+    if pending_only:
+        query = query.where(~Registration.score.has()).order_by(Registration.created_at.desc())
     if keyword:
         query = query.where(or_(
             Registration.name_snapshot.contains(keyword, autoescape=True),
@@ -210,6 +226,7 @@ def registration_payload(registration: Registration) -> dict[str, object]:
         "name": registration.name_snapshot,
         "phone": registration.phone_snapshot,
         "number_plate": registration.number_plate,
+        "registered_at": registration.created_at.replace(tzinfo=UTC) if registration.created_at.tzinfo is None else registration.created_at,
         "status": registration.status,
         "score": registration.score.total_score if registration.score else None,
         "score_details": score_details(registration.score),
