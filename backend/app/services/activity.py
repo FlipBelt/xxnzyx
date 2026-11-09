@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Literal
 
 from fastapi import HTTPException, status
 from sqlalchemy import Select, desc, select
@@ -29,10 +30,13 @@ async def get_activity_by_slug(session: AsyncSession, slug: str) -> Activity:
     return activity
 
 
-async def get_current_activity(session: AsyncSession) -> Activity:
-    activity = await session.scalar(activity_query().where(Activity.status == "active"))
+async def get_current_activity(session: AsyncSession, *, lock: Literal["read", "write"] | None = None) -> Activity:
+    query = activity_query().limit(1).execution_options(populate_existing=True)
+    if lock:
+        query = query.with_for_update(read=lock == "read")
+    activity = await session.scalar(query.where(Activity.status == "active"))
     if activity is None:
-        activity = await session.scalar(activity_query())
+        activity = await session.scalar(query)
     if activity is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="当前没有活动")
     return activity
