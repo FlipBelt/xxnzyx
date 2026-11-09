@@ -41,7 +41,8 @@ async function capture(page, name) {
 }
 async function assertNarrow(page) {
   const sizes = await page.evaluate(() => ({
-    width: window.innerWidth, scroll: document.documentElement.scrollWidth,
+    width: window.innerWidth,
+    scroll: Math.max(document.documentElement.scrollWidth, document.querySelector('.taro_page_show')?.scrollWidth ?? 0),
     bodyOverflow: document.body.style.overflow, htmlOverflow: document.documentElement.style.overflow
   }))
   assert.ok(sizes.scroll <= sizes.width + 1, JSON.stringify(sizes))
@@ -92,8 +93,10 @@ async function fixture(page, { initialFailures = 0, loseFirstReceipt = false } =
 }
 async function runMobile(browser, engine) {
   for (const [width, height] of [[320, 568], [390, 844], [430, 932]]) {
+    const reduceMotion = engine === 'webkit' && width === 320
     const context = await browser.newContext({
       viewport: { width, height }, isMobile: true, hasTouch: true,
+      reducedMotion: reduceMotion ? 'reduce' : 'no-preference',
       userAgent: engine === 'webkit' ? playwright.devices['iPhone 13'].userAgent : playwright.devices['Pixel 7'].userAgent
     })
     const page = await context.newPage()
@@ -103,8 +106,27 @@ async function runMobile(browser, engine) {
     await page.goto(origin)
     await page.locator('.brand-logo img').waitFor()
     await page.waitForFunction(() => document.querySelector('.brand-logo img')?.naturalWidth > 0)
+    await assertNarrow(page)
+    if (width === 390) {
+      await page.waitForFunction(() => {
+        const logos = [...document.querySelectorAll('.platform-logo img')]
+        return logos.length === 2 && logos.every(logo => logo.naturalWidth > 0)
+      })
+      for (const [label, title] of [['抖音二维码', '抖音'], ['淘宝店铺二维码', '淘宝店铺']]) {
+        const trigger = page.getByRole('button', { name: label })
+        await trigger.press('Enter')
+        await page.getByText(title, { exact: true }).and(page.locator('.follow-dialog__title')).waitFor()
+        await page.waitForFunction(() => document.activeElement?.matches('.follow-dialog__close'), undefined, { timeout: 5000 })
+        await page.keyboard.press('Escape')
+        await page.locator('.follow-dialog').waitFor({ state: 'hidden' })
+        assert.ok(await trigger.evaluate(node => node === document.activeElement))
+      }
+      await capture(page, engine + '-race-home')
+      checks += 3
+    }
     checks += 1
-    await page.getByText('下一步：填写报名', { exact: true }).click()
+    if (width === 390) await page.getByRole('button', { name: '下一步：填写报名' }).press('Enter')
+    else await page.getByText('下一步：填写报名', { exact: true }).click()
     await page.getByText('填写参赛信息', { exact: true }).waitFor()
     await assertNarrow(page)
     for (const [placeholder, value] of [['请输入姓名', '本地测试选手'], ['请输入11位手机号', '13900000001'], ['请输入本场参赛号码牌', 'LOCAL-07']]) {
@@ -114,7 +136,7 @@ async function runMobile(browser, engine) {
       await input.scrollIntoViewIfNeeded()
       await assertNarrow(page)
       const box = await input.boundingBox()
-      assert.ok(box && box.x >= -1 && box.x + box.width <= width + 1)
+      assert.ok(box && box.x >= -1 && box.x + box.width <= width + 1 && box.height >= 44)
       const font = await input.evaluate(element => getComputedStyle(element).fontSize)
       assert.ok(parseFloat(font) >= 16, font)
       await page.setViewportSize({ width, height })
@@ -129,22 +151,35 @@ async function runMobile(browser, engine) {
     assert.equal(state.records, 1)
     assert.equal(state.meReads, 0)
     await assertNarrow(page)
-    if (width === 320) {
+    if (width <= 390) {
+      const currentStop = page.locator('.race-stop[aria-current="step"]')
+      const assertStop = async label => assert.ok((await currentStop.innerText()).endsWith(label))
+      await assertStop('备战')
       await page.getByText('下一步：查看计分与奖励', { exact: true }).click()
       await page.getByText('计分与奖励', { exact: true }).first().waitFor()
+      await assertStop('备战')
       await assertNarrow(page)
       await page.getByText('下一步：查看挑战规则', { exact: true }).click()
       await page.getByText('挑战规则', { exact: true }).first().waitFor()
       await assertNarrow(page)
+      if (width === 390) await capture(page, engine + '-race-rules')
       await page.getByText('下一步：进入现场挑战', { exact: true }).click()
+      await page.getByText('LOCAL-07', { exact: true }).and(page.locator('.race-bib__number')).waitFor()
+      await assertStop('挑战')
+      if (width === 390) await capture(page, engine + '-race-bib')
       await page.getByText('刷新我的成绩', { exact: true }).click()
       await page.getByText('成绩加载失败，请联系工作人员。', { exact: true }).waitFor()
       state.profileReady = true
       await page.getByText('刷新我的成绩', { exact: true }).click()
       await page.getByText('我的挑战成绩', { exact: true }).waitFor()
+      await assertStop('成绩')
+      assert.match(await page.locator('.result-score').innerText(), /50/)
+      const animation = await page.locator('.result-score-panel').evaluate(node => getComputedStyle(node).animationName)
+      assert.equal(animation, reduceMotion ? 'none' : 'score-arrival')
       await page.waitForFunction(() => document.querySelector('img.draw-qr')?.naturalWidth > 0)
       await assertNarrow(page)
-      checks += 3
+      if (width === 390) await capture(page, engine + '-race-result')
+      checks += 10
     }
     assert.deepEqual(errors, [])
     checks += 5
@@ -201,8 +236,9 @@ try {
     const browser = await playwright[engine].launch(engine === 'chromium' ? { channel: 'chrome' } : {})
     try {
       await runMobile(browser, engine)
-      if (engine === 'chromium') await runAdmin(browser)
-      console.log(engine + ': mobile recovery/layout' + (engine === 'chromium' ? ' and admin authentication' : '') + ' passed')
+      const checkAdmin = engine === 'chromium' && process.env.UI_PARTICIPANT_ONLY !== '1'
+      if (checkAdmin) await runAdmin(browser)
+      console.log(engine + ': mobile recovery/layout' + (checkAdmin ? ' and admin authentication' : '') + ' passed')
     } finally { await browser.close() }
   }
   console.log('UI checks passed: ' + checks + ' assertions/groups; isolated fixtures only')
