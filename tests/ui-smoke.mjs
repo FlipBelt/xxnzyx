@@ -50,8 +50,22 @@ async function assertNarrow(page) {
   assert.notEqual(sizes.htmlOverflow, 'hidden')
   checks += 1
 }
-async function fixture(page, { initialFailures = 0, loseFirstReceipt = false } = {}) {
+async function fixture(page, { initialFailures = 0, loseFirstReceipt = false, mobileAdmin = false } = {}) {
   const state = { activityReads: 0, posts: 0, records: 0, meReads: 0, profileReady: false, expired: false }
+  const admin = { id: 1, username: 'fixture-admin', display_name: '本地测试管理员', role: 'admin' }
+  const testItems = ['隐藏奖励', '轻薄衣物', '登山杖', '水壶', '耳机', '手机型号', '能量胶', '盐丸'].map((name, index) => ({
+    id: index + 1, code: `fixture_${index}`, name, points: index === 3 ? 5 : 2, max_quantity: [null, 2, 1, 1, 1, 1, 20, 20][index]
+  }))
+  const adminActivity = { ...activity, rules_version: '1'.repeat(64), score_items: testItems,
+    reward_tiers: [{ id: 1, min_score: 0, max_score: 30, title: '起步', prize_name: '示例奖品' }, { id: 2, min_score: 31, max_score: null, title: '领先', prize_name: '示例奖品' }] }
+  const entrants = Array.from({ length: 10 }, (_, index) => ({
+    id: index + 1, activity_id: 1, name: '合成选手', phone: '138000000' + String(index).padStart(2, '0'),
+    number_plate: `F${String(index + 1).padStart(2, '0')}`, status: 'registered', score: null, score_details: [], score_version: null
+  }))
+  const receipts = new Map()
+  state.scoreWrites = 0
+  state.loseScoreReceipt = mobileAdmin
+  state.rejectConflict = false
   await page.route('**/flipbelt-api/api/v1/**', async route => {
     const url = new URL(route.request().url())
     const endpoint = url.pathname.split('/api/v1')[1]
@@ -75,17 +89,46 @@ async function fixture(page, { initialFailures = 0, loseFirstReceipt = false } =
     if (endpoint === '/admin/login') {
       const body = route.request().postDataJSON()
       if (body.password !== 'local-ui-password') return json({ detail: '用户名或密码错误' }, 401)
-      return json({ access_token: 'synthetic-admin-token', admin: { id: 1, username: 'fixture-admin', display_name: '本地测试管理员', role: 'admin' } })
+      return json({ access_token: 'synthetic-admin-token', admin })
     }
     if (endpoint.startsWith('/admin/')) {
       if (state.expired) return json({ detail: '登录状态无效' }, 401)
       assert.equal(route.request().headers().authorization, 'Bearer synthetic-admin-token')
-      if (endpoint === '/admin/me') return json({ id: 1, username: 'fixture-admin', display_name: '本地测试管理员', role: 'admin' })
+      if (endpoint === '/admin/me') return json(admin)
       if (endpoint === '/admin/dashboard') return json({ activity, registered_count: 1, scored_count: 0, pending_score_count: 1, draw_qualified_count: 0, highest_score: 0 })
-      if (endpoint === '/admin/config') return json(activity)
-      if (endpoint === '/admin/leaderboard') return json({ activity: activity.title, entries: [] })
+      if (endpoint === '/admin/config') return json(mobileAdmin ? adminActivity : activity)
+      if (endpoint === '/admin/leaderboard') return json({ entries: mobileAdmin ? [{ ...entrants[0], registration_id: 1, rank: 1, score: 7, title: '起步' }] : [] })
       if (endpoint === '/admin/draw/candidates') return json({ threshold: 45, items: [] })
-      if (endpoint === '/admin/registrations') return json({ items: [] })
+      if (endpoint === '/admin/draw/result') return json({ already_drawn: false, results: [] })
+      if (endpoint === '/admin/registrations' && route.request().method() === 'POST') {
+        const row = { ...route.request().postDataJSON(), id: 20, activity_id: 1, score: null, score_details: [], score_version: null }
+        entrants.push(row)
+        return json(row, 201)
+      }
+      if (endpoint === '/admin/registrations') {
+        const keyword = url.searchParams.get('keyword') ?? ''
+        return json({ items: mobileAdmin ? entrants.filter((row) => row.number_plate.includes(keyword)) : [], has_more: false })
+      }
+      if (endpoint.startsWith('/admin/registrations/')) return json(entrants.find((row) => row.id === Number(endpoint.split('/').at(-1))))
+      if (endpoint === '/admin/score-submissions') {
+        const draft = route.request().postDataJSON()
+        if (receipts.has(draft.operation_id)) return json(receipts.get(draft.operation_id))
+        const row = entrants.find((entry) => entry.id === draft.registration_id)
+        if (state.rejectConflict) {
+          state.rejectConflict = false
+          row.score_version = 'updated-elsewhere'
+          row.score = 5
+        }
+        if (draft.expected_version !== row.score_version) return json({ detail: '这位选手的成绩已更新，请核对后保存' }, 409)
+        const details = draft.items.map((item) => ({ ...item, subtotal: testItems[item.score_item_id - 1].points * item.quantity }))
+        const receipt = { id: row.id, registration_id: row.id, version: draft.operation_id, total_score: details.reduce((total, item) => total + item.subtotal, 0), details }
+        Object.assign(row, { score: receipt.total_score, score_details: details, score_version: receipt.version })
+        receipts.set(draft.operation_id, receipt)
+        state.scoreWrites++
+        if (state.loseScoreReceipt) { state.loseScoreReceipt = false; return route.abort('failed') }
+        return json(receipt)
+      }
+      if (endpoint.startsWith('/admin/score-submissions/')) return json({ receipt: receipts.get(endpoint.split('/').at(-1)) ?? null })
     }
     return json({ detail: '未定义测试响应' }, 404)
   })
@@ -231,14 +274,136 @@ async function runAdmin(browser) {
   checks += 5
   await context.close()
 }
+async function runMobileAdmin(browser, engine) {
+  const context = await browser.newContext({ viewport: { width: 390, height: 620 }, isMobile: true, hasTouch: true, reducedMotion: 'reduce' })
+  const page = await context.newPage()
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  const state = await fixture(page, { mobileAdmin: true })
+  await page.goto(origin + '/flipbelt-admin/')
+  await page.locator('input').nth(0).fill('fixture-admin')
+  await page.locator('input').nth(1).fill('local-ui-password')
+  await page.getByRole('button', { name: '登录', exact: true }).click()
+  await page.getByRole('button', { name: '开始录分' }).click()
+  const lookup = page.getByRole('searchbox', { name: '查找参赛者' })
+  const select = async (plate) => {
+    await lookup.fill(plate)
+    await lookup.press('Enter')
+    await page.getByRole('button', { name: new RegExp(`#${plate}.*录分`) }).click()
+  }
+  const navigate = async (name) => {
+    await page.getByRole('button', { name: '菜单' }).click()
+    await page.getByRole('navigation', { name: '手机后台导航' }).getByRole('button', { name }).click()
+  }
+  const checkForm = async () => {
+    await assertNarrow(page)
+    const overflow = await page.locator('main.content, .mobile-score-items, .mobile-settings, .mobile-list').evaluateAll((nodes) =>
+      nodes.filter((node) => node.scrollWidth > node.clientWidth + 1).map((node) => node.className))
+    assert.deepEqual(overflow, [])
+    assert.equal(await page.locator('.sidebar').isVisible(), false)
+    assert.equal(await page.locator('.el-table').count(), 0)
+    checks += 3
+  }
+
+  await select('F01')
+  assert.equal(await page.locator('.mobile-score-row').count(), 8)
+  await checkForm()
+  const last = await page.locator('.mobile-score-row').last().boundingBox()
+  const footer = await page.locator('.mobile-score-footer').boundingBox()
+  assert.ok(last.y + last.height <= footer.y + 1 && footer.y + footer.height <= 620, JSON.stringify({ last, footer }))
+  await capture(page, `${engine}-mobile-admin-score`)
+  await page.getByRole('button', { name: '计入水壶' }).click()
+  const quantity = page.getByRole('textbox', { name: '能量胶' })
+  await quantity.fill('21')
+  await page.getByText('请输入 0–20 的整数').waitFor()
+  await quantity.fill('1')
+  await page.setViewportSize({ width: 390, height: 330 })
+  assert.equal(await page.locator('.mobile-score-footer').evaluate((element) => getComputedStyle(element).position), 'static')
+  await quantity.press('Enter')
+  await page.setViewportSize({ width: 390, height: 620 })
+  await page.getByRole('button', { name: '保存并录下一位' }).click()
+  await page.getByText('保存结果待确认，联网后可查保存结果').waitFor()
+  assert.equal(state.scoreWrites, 1)
+  await page.getByRole('button', { name: '保留待确认，查下一位' }).click()
+  await select('F02')
+  await context.setOffline(true)
+  await page.getByRole('button', { name: '离线 · 未提交' }).waitFor()
+  const lateReceipt = page.waitForResponse((response) => response.url().includes('/admin/score-submissions/1/'))
+  await context.setOffline(false)
+  await lateReceipt
+  await page.getByRole('heading', { name: '#F02' }).waitFor()
+  await page.reload()
+  await page.getByRole('button', { name: '开始录分' }).click()
+  await page.getByText('待处理 1').click()
+  await page.getByRole('button', { name: /保存待确认 · 查结果|已保存 · 查看/ }).click()
+  await page.getByText('#F01 已保存 · 7 分').waitFor()
+  assert.equal(state.scoreWrites, 1)
+  assert.equal(await lookup.inputValue(), '')
+
+  for (let index = 2; index <= 10; index++) {
+    const plate = `F${String(index).padStart(2, '0')}`
+    await select(plate)
+    if (index === 10) {
+      await page.getByRole('button', { name: '保存 0 分' }).click()
+      await page.getByRole('dialog').getByRole('button', { name: '保存 0 分' }).click()
+      await page.getByText(`#${plate} 已保存 · 0 分`).waitFor()
+      continue
+    }
+    await page.getByRole('button', { name: '计入水壶' }).click()
+    if (index === 2) {
+      state.rejectConflict = true
+      await page.getByRole('button', { name: '保存并录下一位' }).click()
+      await page.getByText('核对服务器记录和本机录入').waitFor()
+      await page.getByRole('button', { name: '已核对，继续编辑' }).click()
+    }
+    await page.getByRole('button', { name: '保存并录下一位' }).click()
+    await page.getByText(`#${plate} 已保存 · 5 分`).waitFor()
+  }
+  assert.equal(state.scoreWrites, 10)
+  for (const width of [320, 375, 430]) { await page.setViewportSize({ width, height: 620 }); await checkForm() }
+  await page.setViewportSize({ width: 320, height: 568 })
+  await navigate('补录报名')
+  await page.getByLabel('号码牌', { exact: true }).fill('NEW-20')
+  await page.getByLabel('姓名', { exact: true }).fill('合成补录')
+  await page.getByLabel('手机号', { exact: true }).fill('13700000020')
+  await page.getByRole('button', { name: '保存并去录分' }).click()
+  await page.getByRole('heading', { name: '#NEW-20' }).waitFor()
+  await checkForm()
+
+  await navigate('活动设置')
+  await page.getByRole('button', { name: /奖励区间/ }).click()
+  await page.getByRole('button', { name: /0–30 分/ }).click()
+  await page.getByLabel('最高分', { exact: true }).fill('25')
+  await page.getByRole('button', { name: '保存奖励区间' }).click()
+  await page.getByText('请检查区间是否从 0 分连续排列，且只有最后一档可以无上限').waitFor()
+  await checkForm()
+  await capture(page, `${engine}-mobile-admin-settings`)
+  await page.getByRole('button', { name: '‹ 设置' }).click()
+  await page.getByRole('button', { name: '放弃修改' }).click()
+  await page.getByRole('button', { name: /计分道具/ }).click()
+  await page.getByRole('button', { name: /水壶/ }).click()
+  await page.getByLabel('分值', { exact: true }).waitFor()
+  await checkForm()
+  await navigate('排行榜')
+  await page.getByText('#F01', { exact: true }).waitFor()
+  await page.getByRole('button', { name: '最终抽奖' }).click()
+  await page.getByText('符合资格的选手不足两人。').waitFor()
+  assert.ok(await page.getByRole('button', { name: '随机抽取两位获奖者' }).isDisabled())
+  await checkForm()
+  assert.deepEqual(errors, [])
+  checks += 16
+  await context.close()
+}
 try {
   for (const engine of ['chromium', 'webkit']) {
     const browser = await playwright[engine].launch(engine === 'chromium' ? { channel: 'chrome' } : {})
     try {
-      await runMobile(browser, engine)
-      const checkAdmin = engine === 'chromium' && process.env.UI_PARTICIPANT_ONLY !== '1'
-      if (checkAdmin) await runAdmin(browser)
-      console.log(engine + ': mobile recovery/layout' + (checkAdmin ? ' and admin authentication' : '') + ' passed')
+      if (process.env.UI_ADMIN_ONLY !== '1') await runMobile(browser, engine)
+      if (process.env.UI_PARTICIPANT_ONLY !== '1') {
+        if (engine === 'chromium') await runAdmin(browser)
+        await runMobileAdmin(browser, engine)
+      }
+      console.log(engine + ': UI checks passed')
     } finally { await browser.close() }
   }
   console.log('UI checks passed: ' + checks + ' assertions/groups; isolated fixtures only')

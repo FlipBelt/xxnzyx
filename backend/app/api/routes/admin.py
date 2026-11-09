@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from secrets import SystemRandom
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
-from sqlalchemy import func, select
+from sqlalchemy import case, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.concurrency import run_in_threadpool
@@ -31,14 +33,22 @@ from app.schemas.activity import (
     RewardTierUpdate,
     ScoreCreate,
     ScoreItemUpdate,
+    ScoreSubmission,
 )
 from app.services.activity import (
     get_current_activity,
     leaderboard_entries,
-    reward_for_score,
     serialize_activity,
 )
-from app.services.scoring import ScoreValidationError, save_score
+from app.services.scoring import (
+    ScoreConflictError,
+    ScoreValidationError,
+    find_score_operation,
+    save_score,
+    score_details,
+    score_version,
+    scoring_rules_version,
+)
 from app.services.security import create_access_token, verify_password
 from app.services.storage import StorageConfigurationError, get_object_storage
 
@@ -167,43 +177,79 @@ async def list_registrations(
     session: DbSession,
     _: AdminUser = Depends(get_current_admin),
     keyword: str | None = Query(default=None, max_length=80),
+    limit: int | None = Query(default=None, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
 ) -> dict[str, object]:
     activity = await get_current_activity(session)
     query = (
         select(Registration)
         .where(Registration.activity_id == activity.id)
         .options(selectinload(Registration.score).selectinload(ChallengeScore.details))
-        .order_by(Registration.id.desc())
     )
+    keyword = (keyword or "").strip()
     if keyword:
-        normalized = "".join(char for char in keyword if char.isdigit())
-        query = query.where(
-            (Registration.name_snapshot.contains(keyword.strip()))
-            | (Registration.number_plate.ilike(f"%{keyword.strip()}%"))
-            | (Registration.phone_snapshot.contains(normalized or keyword.strip()))
-        )
+        query = query.where(or_(
+            Registration.name_snapshot.contains(keyword, autoescape=True),
+            Registration.number_plate.icontains(keyword, autoescape=True),
+            Registration.phone_snapshot.contains(keyword, autoescape=True),
+        )).order_by(case((func.lower(Registration.number_plate) == keyword.lower(), 0), else_=1))
+    query = query.order_by(Registration.id.desc()).offset(offset)
+    if limit is not None:
+        query = query.limit(limit + 1)
     rows = list((await session.execute(query)).scalars())
     return {
-        "items": [
-            {
-                "id": registration.id,
-                "name": registration.name_snapshot,
-                "phone": registration.phone_snapshot,
-                "number_plate": registration.number_plate,
-                "status": registration.status,
-                "score": registration.score.total_score if registration.score else None,
-                "score_details": [
-                    {
-                        "score_item_id": detail.score_item_id,
-                        "quantity": detail.quantity,
-                        "subtotal": detail.subtotal,
-                    }
-                    for detail in (registration.score.details if registration.score else [])
-                ],
-            }
-            for registration in rows
-        ]
+        "items": [registration_payload(row) for row in rows[:limit]],
+        "has_more": limit is not None and len(rows) > limit,
     }
+
+
+def registration_payload(registration: Registration) -> dict[str, object]:
+    return {
+        "id": registration.id,
+        "activity_id": registration.activity_id,
+        "name": registration.name_snapshot,
+        "phone": registration.phone_snapshot,
+        "number_plate": registration.number_plate,
+        "status": registration.status,
+        "score": registration.score.total_score if registration.score else None,
+        "score_details": score_details(registration.score),
+        "score_version": score_version(registration.score),
+    }
+
+
+@router.get("/registrations/{registration_id}")
+async def get_registration(
+    registration_id: int, session: DbSession, _: AdminUser = Depends(get_current_admin),
+) -> dict[str, object]:
+    activity = await get_current_activity(session)
+    registration = await session.scalar(
+        select(Registration)
+        .where(Registration.id == registration_id, Registration.activity_id == activity.id)
+        .options(selectinload(Registration.score).selectinload(ChallengeScore.details))
+    )
+    if registration is None:
+        raise HTTPException(status_code=404, detail="当前活动未找到这位参赛者")
+    return registration_payload(registration)
+
+
+async def recover_manual_registration(
+    session: AsyncSession, activity_id: int, name: str, phone: str, number_plate: str,
+) -> dict[str, object] | None:
+    rows = (await session.scalars(
+        select(Registration)
+        .where(Registration.activity_id == activity_id,
+               or_(Registration.phone_snapshot == phone, Registration.number_plate == number_plate))
+        .options(selectinload(Registration.score).selectinload(ChallengeScore.details))
+    )).all()
+    if not rows:
+        return None
+    if len(rows) == 1 and (rows[0].name_snapshot, rows[0].phone_snapshot, rows[0].number_plate) == (name, phone, number_plate):
+        return registration_payload(rows[0])
+    fields = [label for label, conflict in (
+        ("手机号", any(row.phone_snapshot == phone for row in rows)),
+        ("号码牌", any(row.number_plate == number_plate for row in rows)),
+    ) if conflict]
+    raise HTTPException(status_code=409, detail=f"{'与'.join(fields)}已存在，请核对现有报名")
 
 
 @router.post("/registrations", status_code=status.HTTP_201_CREATED)
@@ -214,50 +260,42 @@ async def create_manual_registration(
 ) -> dict[str, object]:
     """现场数据失联时，由工作人员补录，随后可直接登记成绩。"""
     activity = await get_current_activity(session)
+    activity_id = activity.id
     name = payload.name.strip()
     phone = normalize_phone(payload.phone)
     number_plate = payload.number_plate.strip()
-    if len(phone) != 11:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="手机号必须为11位数字")
-    duplicate = await session.scalar(
-        select(Registration.id).where(
-            Registration.activity_id == activity.id,
-            (Registration.phone_snapshot == phone) | (Registration.number_plate == number_plate),
+    if not name or not number_plate or len(phone) != 11:
+        raise HTTPException(status_code=422, detail="请填写姓名、11位手机号和本场参赛号码牌")
+    existing = await recover_manual_registration(session, activity_id, name, phone, number_plate)
+    if existing is not None:
+        return existing
+    try:
+        participant = Participant(name=name, phone=phone)
+        session.add(participant)
+        await session.flush()
+        session.add(ParticipantIdentity(
+            participant_id=participant.id, channel="admin", external_id=f"admin:{activity_id}:{participant.id}",
+        ))
+        registration = Registration(
+            activity_id=activity_id, participant_id=participant.id, name_snapshot=name,
+            phone_snapshot=phone, number_plate=number_plate, score=None,
         )
-    )
-    if duplicate is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该手机号或号码牌已存在，请直接查询后录分")
-    participant = Participant(name=name, phone=phone)
-    session.add(participant)
-    await session.flush()
-    session.add(
-        ParticipantIdentity(
-            participant_id=participant.id,
-            channel="admin",
-            external_id=f"admin:{activity.id}:{participant.id}",
-        )
-    )
-    registration = Registration(
-        activity_id=activity.id,
-        participant_id=participant.id,
-        name_snapshot=name,
-        phone_snapshot=phone,
-        number_plate=number_plate,
-    )
-    session.add(registration)
-    await session.flush()
-    session.add(
-        AuditLog(
-            activity_id=activity.id,
-            admin_user_id=admin.id,
-            action="registration.manual_create",
-            entity_type="registration",
-            entity_id=str(registration.id),
+        session.add(registration)
+        await session.flush()
+        session.add(AuditLog(
+            activity_id=activity_id, admin_user_id=admin.id, action="registration.manual_create",
+            entity_type="registration", entity_id=str(registration.id),
             after_data={"name": name, "phone": phone, "number_plate": number_plate, "source": "admin_manual"},
-        )
-    )
-    await session.commit()
-    return {"id": registration.id, "name": name, "phone": phone, "number_plate": number_plate, "status": registration.status, "score": None}
+        ))
+        result = registration_payload(registration)
+        await session.commit()
+        return result
+    except IntegrityError:
+        await session.rollback()
+        existing = await recover_manual_registration(session, activity_id, name, phone, number_plate)
+        if existing is not None:
+            return existing
+        raise
 
 
 @router.post("/scores", status_code=status.HTTP_201_CREATED)
@@ -266,22 +304,11 @@ async def create_or_update_score(
     session: DbSession,
     admin: AdminUser = Depends(get_current_admin),
 ) -> dict[str, object]:
-    activity = await get_current_activity(session)
+    activity = await get_current_activity(session, lock="read")
     try:
-        score = await save_score(session, activity, payload, admin)
+        return await save_score(session, activity, payload, admin)
     except ScoreValidationError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
-    reward = reward_for_score(score.total_score, activity.reward_tiers)
-    return {
-        "id": score.id,
-        "registration_id": score.registration_id,
-        "total_score": score.total_score,
-        "reward": {"title": reward.title, "prize_name": reward.prize_name} if reward else None,
-        "details": [
-            {"score_item_id": detail.score_item_id, "quantity": detail.quantity, "subtotal": detail.subtotal}
-            for detail in score.details
-        ],
-    }
 
 
 @router.put("/scores/{registration_id}")
@@ -292,34 +319,51 @@ async def update_score(
     admin: AdminUser = Depends(get_current_admin),
 ) -> dict[str, object]:
     """Explicitly modify an existing score without allowing a new score to be created."""
-    activity = await get_current_activity(session)
+    activity = await get_current_activity(session, lock="read")
     payload = payload.model_copy(update={"registration_id": registration_id})
     try:
-        score = await save_score(session, activity, payload, admin, update_only=True)
+        return await save_score(session, activity, payload, admin, update_only=True)
     except ScoreValidationError as exc:
         message = str(exc)
         code = status.HTTP_404_NOT_FOUND if "尚未录入成绩" in message else status.HTTP_422_UNPROCESSABLE_ENTITY
         raise HTTPException(status_code=code, detail=message) from exc
-    reward = reward_for_score(score.total_score, activity.reward_tiers)
-    return {
-        "id": score.id,
-        "registration_id": score.registration_id,
-        "total_score": score.total_score,
-        "reward": {"title": reward.title, "prize_name": reward.prize_name} if reward else None,
-        "details": [
-            {"score_item_id": detail.score_item_id, "quantity": detail.quantity, "subtotal": detail.subtotal}
-            for detail in score.details
-        ],
-    }
+
+
+@router.post("/score-submissions")
+async def submit_score(
+    payload: ScoreSubmission, session: DbSession, admin: AdminUser = Depends(get_current_admin),
+) -> dict[str, object]:
+    activity = await get_current_activity(session, lock="read")
+    if activity.id != payload.activity_id:
+        raise HTTPException(status_code=409, detail="活动已切换，请返回当前活动查询")
+    try:
+        return await save_score(session, activity, payload, admin)
+    except ScoreConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ScoreValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/score-submissions/{registration_id}/{operation_id}")
+async def score_submission_receipt(
+    registration_id: int, operation_id: UUID, session: DbSession, admin: AdminUser = Depends(get_current_admin),
+) -> dict[str, object]:
+    activity = await get_current_activity(session)
+    operation = await find_score_operation(session, activity.id, registration_id, admin.id, str(operation_id))
+    return {"receipt": operation["receipt"] if operation else None}
 
 
 @router.delete("/scores")
 async def delete_all_scores(
     session: DbSession,
     admin: AdminUser = Depends(get_administrator),
+    activity_id: int | None = Query(default=None),
+    expected_count: int | None = Query(default=None, ge=0),
 ) -> dict[str, int]:
     """Clear all entered scores for the current activity while keeping registrations."""
-    activity = await get_current_activity(session)
+    activity = await get_current_activity(session, lock="write")
+    if activity_id is not None and activity.id != activity_id:
+        raise HTTPException(status_code=409, detail="活动已切换，请重新确认")
     rows = list(
         (
             await session.execute(
@@ -331,6 +375,8 @@ async def delete_all_scores(
         ).scalars()
     )
     registration_ids = [score.registration_id for score in rows]
+    if expected_count is not None and len(registration_ids) != expected_count:
+        raise HTTPException(status_code=409, detail="已录分人数已变化，请重新确认")
     for score in rows:
         score.registration.status = "registered"
         await session.delete(score)
@@ -354,19 +400,23 @@ async def delete_score(
     registration_id: int,
     session: DbSession,
     admin: AdminUser = Depends(get_administrator),
+    expected_version: str | None = Query(default=None, max_length=100),
 ) -> dict[str, int | str]:
     """Remove one entered score and return the registration to the waiting state."""
-    activity = await get_current_activity(session)
+    activity = await get_current_activity(session, lock="read")
     registration = await session.scalar(
         select(Registration)
         .where(Registration.id == registration_id, Registration.activity_id == activity.id)
         .options(selectinload(Registration.score).selectinload(ChallengeScore.details))
+        .with_for_update()
     )
     if registration is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="参赛者不存在")
     score = registration.score
     if score is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="该参赛者尚未录入成绩")
+    if expected_version is not None and score_version(score) != expected_version:
+        raise HTTPException(status_code=409, detail="成绩已更新，请重新查询后确认删除")
     before_data = {
         "total_score": score.total_score,
         "details": [
@@ -392,9 +442,16 @@ async def delete_score(
 
 
 @router.get("/leaderboard")
-async def admin_leaderboard(session: DbSession, _: AdminUser = Depends(get_current_admin)) -> dict[str, object]:
+async def admin_leaderboard(
+    session: DbSession,
+    _: AdminUser = Depends(get_current_admin),
+    limit: int | None = Query(default=None, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> dict[str, object]:
     activity = await get_current_activity(session)
-    return {"entries": await leaderboard_entries(session, activity, include_private=True)}
+    entries = await leaderboard_entries(session, activity, include_private=True)
+    end = offset + limit if limit is not None else None
+    return {"entries": entries[offset:end], "has_more": end is not None and len(entries) > end}
 
 
 @router.get("/draw/candidates")
@@ -404,26 +461,37 @@ async def draw_candidates(session: DbSession, _: AdminUser = Depends(get_current
     return {"threshold": activity.draw_threshold, "items": [item for item in entries if item["score"] >= activity.draw_threshold]}
 
 
-@router.post("/draw")
-async def run_draw(session: DbSession, admin: AdminUser = Depends(get_administrator)) -> dict[str, object]:
+async def saved_draw(session: AsyncSession, activity_id: int) -> list[DrawResult]:
+    return list(await session.scalars(select(DrawResult).where(DrawResult.activity_id == activity_id).order_by(DrawResult.prize_rank)))
+
+
+def draw_payload(results: list[DrawResult], *, already_drawn: bool) -> dict[str, object]:
+    return {
+        "already_drawn": already_drawn,
+        "results": [
+            {"prize_rank": item.prize_rank, "registration_id": item.registration_id, "prize_name": item.prize_name}
+            for item in results
+        ],
+    }
+
+
+@router.get("/draw/result")
+async def get_draw_result(session: DbSession, _: AdminUser = Depends(get_administrator)) -> dict[str, object]:
     activity = await get_current_activity(session)
-    existing = list(
-        (
-            await session.execute(
-                select(DrawResult)
-                .where(DrawResult.activity_id == activity.id)
-                .order_by(DrawResult.prize_rank)
-            )
-        ).scalars()
-    )
+    results = await saved_draw(session, activity.id)
+    return draw_payload(results, already_drawn=bool(results))
+
+
+@router.post("/draw")
+async def run_draw(
+    session: DbSession, admin: AdminUser = Depends(get_administrator), activity_id: int | None = Query(default=None),
+) -> dict[str, object]:
+    activity = await get_current_activity(session, lock="write")
+    if activity_id is not None and activity_id != activity.id:
+        raise HTTPException(status_code=409, detail="活动已切换，请重新确认")
+    existing = await saved_draw(session, activity.id)
     if existing:
-        return {
-            "already_drawn": True,
-            "results": [
-                {"prize_rank": item.prize_rank, "registration_id": item.registration_id, "prize_name": item.prize_name}
-                for item in existing
-            ],
-        }
+        return draw_payload(existing, already_drawn=True)
     candidate_ids = list(
         (
             await session.execute(
@@ -459,18 +527,13 @@ async def run_draw(session: DbSession, admin: AdminUser = Depends(get_administra
         )
     )
     await session.commit()
-    return {
-        "already_drawn": False,
-        "results": [
-            {"prize_rank": item.prize_rank, "registration_id": item.registration_id, "prize_name": item.prize_name}
-            for item in results
-        ],
-    }
+    return draw_payload(results, already_drawn=False)
 
 
 @router.get("/config")
 async def get_config(session: DbSession, _: AdminUser = Depends(get_current_admin)) -> dict[str, object]:
-    return serialize_activity(await get_current_activity(session))
+    activity = await get_current_activity(session)
+    return {**serialize_activity(activity), "rules_version": scoring_rules_version(activity)}
 
 
 @router.put("/config/activity")
@@ -479,12 +542,12 @@ async def update_activity_settings(
     session: DbSession,
     admin: AdminUser = Depends(get_administrator),
 ) -> dict[str, object]:
-    activity = await get_current_activity(session)
+    activity = await get_current_activity(session, lock="write")
     for field, value in payload.model_dump().items():
         setattr(activity, field, value)
     await add_config_audit(session, activity.id, admin.id, "activity", payload.model_dump())
     await session.commit()
-    return serialize_activity(await get_current_activity(session))
+    return await get_config(session, admin)
 
 
 @router.put("/config/reward-tiers")
@@ -493,7 +556,7 @@ async def replace_reward_tiers(
     session: DbSession,
     admin: AdminUser = Depends(get_administrator),
 ) -> dict[str, object]:
-    activity = await get_current_activity(session)
+    activity = await get_current_activity(session, lock="write")
     tiers = ensure_tiers_valid(payload)
     for tier in list(activity.reward_tiers):
         await session.delete(tier)
@@ -502,7 +565,7 @@ async def replace_reward_tiers(
         session.add(RewardTier(activity_id=activity.id, is_active=True, **tier.model_dump()))
     await add_config_audit(session, activity.id, admin.id, "reward_tiers", [item.model_dump() for item in tiers])
     await session.commit()
-    return serialize_activity(await get_current_activity(session))
+    return await get_config(session, admin)
 
 
 @router.post("/config/score-items", status_code=status.HTTP_201_CREATED)
@@ -511,7 +574,7 @@ async def create_score_item(
     session: DbSession,
     admin: AdminUser = Depends(get_administrator),
 ) -> dict[str, object]:
-    activity = await get_current_activity(session)
+    activity = await get_current_activity(session, lock="write")
     existing = await session.scalar(
         select(ScoreItem).where(ScoreItem.activity_id == activity.id, ScoreItem.code == payload.code)
     )
@@ -532,7 +595,7 @@ async def update_score_item(
     session: DbSession,
     admin: AdminUser = Depends(get_administrator),
 ) -> dict[str, object]:
-    activity = await get_current_activity(session)
+    activity = await get_current_activity(session, lock="write")
     item = await session.scalar(select(ScoreItem).where(ScoreItem.id == item_id, ScoreItem.activity_id == activity.id))
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="道具不存在")

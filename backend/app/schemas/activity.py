@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from pydantic import BaseModel, Field
 
 
@@ -34,6 +36,13 @@ class ScoreEntry(BaseModel):
 class ScoreCreate(BaseModel):
     registration_id: int
     items: list[ScoreEntry] = Field(min_length=1)
+
+
+class ScoreSubmission(ScoreCreate):
+    activity_id: int
+    operation_id: UUID
+    expected_version: str | None = Field(max_length=100)
+    rules_version: str = Field(min_length=64, max_length=64)
 
 
 class AdminLoginRequest(BaseModel):
