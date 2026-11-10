@@ -45,3 +45,21 @@ button, input, textarea, select { font: inherit; }
 button:focus-visible, a:focus-visible { outline: 2px solid var(--fb-ink); outline-offset: 3px; }
 .el-input__inner { font-size: 16px; }
 .el-button { min-height: 42px; border-radius: 4px; }
+
+.home-ranking { margin-top: 12px; }
+.home-ranking h2 { margin: 0 0 4px; font-size: 18px; }
+.home-ranking-link {
+  min-height: 44px; padding: 0 6px; border: 0; background: transparent; color: var(--fb-ink);
+  font-weight: 650; white-space: nowrap; cursor: pointer;
+}
+.home-ranking-rows { list-style: none; margin: 0; padding: 0; }
+.home-ranking-rows li {
+  display: grid; grid-template-columns: 2rem minmax(0, 1fr) auto; align-items: center; gap: 10px;
+  min-height: 38px; padding: 6px 0; border-top: 1px solid var(--fb-border); overflow-wrap: anywhere;
+}
+.home-ranking-place, .home-ranking-note { color: var(--fb-muted); }
+.home-ranking-place { font-variant-numeric: tabular-nums; }
+.pending-queue-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pending-queue-heading h2, .pending-queue-heading h3 { margin: 0; font-size: 16px; }
+.pending-queue-heading small { color: var(--fb-muted); }
+.pending-day h3, .pending-day h4 { margin: 10px 0 6px; color: var(--fb-muted); font-size: 14px; }

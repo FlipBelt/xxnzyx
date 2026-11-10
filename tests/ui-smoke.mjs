@@ -60,12 +60,15 @@ async function fixture(page, { initialFailures = 0, loseFirstReceipt = false, mo
     reward_tiers: [{ id: 1, min_score: 0, max_score: 30, title: '起步', prize_name: '示例奖品' }, { id: 2, min_score: 31, max_score: null, title: '领先', prize_name: '示例奖品' }] }
   const entrants = Array.from({ length: 10 }, (_, index) => ({
     id: index + 1, activity_id: 1, name: '合成选手', phone: '138000000' + String(index).padStart(2, '0'),
-    number_plate: `F${String(index + 1).padStart(2, '0')}`, status: 'registered', score: null, score_details: [], score_version: null
+    number_plate: `F${String(index + 1).padStart(2, '0')}`, registered_at: index < 2 ? '2026-11-08T16:15:00Z' : '2026-11-08T15:45:00Z',
+    status: 'registered', score: null, score_details: [], score_version: null
   }))
   const receipts = new Map()
   state.scoreWrites = 0
   state.loseScoreReceipt = mobileAdmin
   state.rejectConflict = false
+  state.homePreviewScore = 7
+  state.failHomeRanking = false
   await page.route('**/flipbelt-api/api/v1/**', async route => {
     const url = new URL(route.request().url())
     const endpoint = url.pathname.split('/api/v1')[1]
@@ -97,17 +100,21 @@ async function fixture(page, { initialFailures = 0, loseFirstReceipt = false, mo
       if (endpoint === '/admin/me') return json(admin)
       if (endpoint === '/admin/dashboard') return json({ activity, registered_count: 1, scored_count: 0, pending_score_count: 1, draw_qualified_count: 0, highest_score: 0 })
       if (endpoint === '/admin/config') return json(mobileAdmin ? adminActivity : activity)
-      if (endpoint === '/admin/leaderboard') return json({ entries: mobileAdmin ? [{ ...entrants[0], registration_id: 1, rank: 1, score: 7, title: '起步' }] : [] })
+      if (endpoint === '/admin/leaderboard') {
+        if (state.failHomeRanking && url.searchParams.get('limit') === '10') return json({ detail: '测试网络不可用' }, 503)
+        return json({ entries: mobileAdmin ? [{ ...entrants[0], registration_id: 1, rank: 1, score: state.homePreviewScore, title: '起步' }] : [] })
+      }
       if (endpoint === '/admin/draw/candidates') return json({ threshold: 45, items: [] })
       if (endpoint === '/admin/draw/result') return json({ already_drawn: false, results: [] })
       if (endpoint === '/admin/registrations' && route.request().method() === 'POST') {
-        const row = { ...route.request().postDataJSON(), id: 20, activity_id: 1, score: null, score_details: [], score_version: null }
+        const row = { ...route.request().postDataJSON(), id: 20, activity_id: 1, registered_at: '2026-11-08T16:15:00Z', score: null, score_details: [], score_version: null }
         entrants.push(row)
         return json(row, 201)
       }
       if (endpoint === '/admin/registrations') {
         const keyword = url.searchParams.get('keyword') ?? ''
-        return json({ items: mobileAdmin ? entrants.filter((row) => row.number_plate.includes(keyword)) : [], has_more: false })
+        const items = mobileAdmin ? entrants.filter((row) => url.searchParams.has('pending_only') ? row.score == null : row.number_plate.includes(keyword)) : []
+        return json({ items, has_more: false })
       }
       if (endpoint.startsWith('/admin/registrations/')) return json(entrants.find((row) => row.id === Number(endpoint.split('/').at(-1))))
       if (endpoint === '/admin/score-submissions') {
@@ -245,7 +252,7 @@ async function runAdmin(browser) {
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', error => errors.push(error.message))
-  const state = await fixture(page)
+  const state = await fixture(page, { mobileAdmin: true })
   await page.goto(origin + '/flipbelt-admin/')
   await page.getByRole('heading', { name: '登录现场管理台' }).waitFor()
   await page.locator('input').nth(0).fill('fixture-admin')
@@ -256,6 +263,10 @@ async function runAdmin(browser) {
   await page.getByRole('button', { name: '登录', exact: true }).click()
   await page.getByRole('heading', { name: '现场概况', exact: true }).waitFor()
   await page.getByText('活动概览', { exact: true }).waitFor()
+  await page.getByRole('button', { name: '开始录分' }).click()
+  await page.locator('.pending-day').first().getByText('F01', { exact: true }).waitFor()
+  await page.locator('.pending-day').last().getByText('F03', { exact: true }).waitFor()
+  await page.getByRole('navigation', { name: '后台导航' }).getByText('现场概况', { exact: true }).click()
   await capture(page, 'admin-dashboard')
   await page.reload()
   await page.getByText('活动概览', { exact: true }).waitFor()
@@ -271,7 +282,7 @@ async function runAdmin(browser) {
   await assertNarrow(page)
   await capture(page, 'admin-login')
   assert.deepEqual(errors, [])
-  checks += 5
+  checks += 7
   await context.close()
 }
 async function runMobileAdmin(browser, engine) {
@@ -280,11 +291,27 @@ async function runMobileAdmin(browser, engine) {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   const state = await fixture(page, { mobileAdmin: true })
+  await page.clock.install()
   await page.goto(origin + '/flipbelt-admin/')
   await page.locator('input').nth(0).fill('fixture-admin')
   await page.locator('input').nth(1).fill('local-ui-password')
   await page.getByRole('button', { name: '登录', exact: true }).click()
+  const homeRanking = page.getByRole('region', { name: '实时排行榜' })
+  await homeRanking.getByText('7 分', { exact: true }).waitFor()
+  state.homePreviewScore = 9
+  await page.clock.fastForward(10_000)
+  await homeRanking.getByText('9 分', { exact: true }).waitFor()
+  state.failHomeRanking = true
+  await page.clock.fastForward(10_000)
+  await homeRanking.getByText('刷新失败，显示上次成功榜单').waitFor()
+  assert.equal(await homeRanking.getByText('9 分', { exact: true }).count(), 1)
+  state.failHomeRanking = false
   await page.getByRole('button', { name: '开始录分' }).click()
+  const queue = page.getByRole('region', { name: '待录分名单' })
+  await queue.getByRole('heading', { name: /2026[/年-]11[/月-]09/ }).waitFor()
+  await queue.getByRole('heading', { name: /2026[/年-]11[/月-]08/ }).waitFor()
+  assert.equal(await queue.locator('.pending-day').first().getByRole('button', { name: /#F01.*录分/ }).count(), 1)
+  assert.equal(await queue.locator('.pending-day').last().getByRole('button', { name: /#F03.*录分/ }).count(), 1)
   const lookup = page.getByRole('searchbox', { name: '查找参赛者' })
   const select = async (plate) => {
     await lookup.fill(plate)
@@ -360,6 +387,7 @@ async function runMobileAdmin(browser, engine) {
     await page.getByText(`#${plate} 已保存 · 5 分`).waitFor()
   }
   assert.equal(state.scoreWrites, 10)
+  await queue.getByText('当前没有待录分人员。', { exact: true }).waitFor()
   for (const width of [320, 375, 430]) { await page.setViewportSize({ width, height: 620 }); await checkForm() }
   await page.setViewportSize({ width: 320, height: 568 })
   await navigate('补录报名')
@@ -391,7 +419,7 @@ async function runMobileAdmin(browser, engine) {
   assert.ok(await page.getByRole('button', { name: '随机抽取两位获奖者' }).isDisabled())
   await checkForm()
   assert.deepEqual(errors, [])
-  checks += 16
+  checks += 23
   await context.close()
 }
 try {

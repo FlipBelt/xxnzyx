@@ -55,6 +55,11 @@ export const adminApi = {
     if (page) { query.set('limit', String(page.limit)); query.set('offset', String(page.offset)) }
     return request<{ items: Registration[]; has_more: boolean }>(`/admin/registrations?${query}`, { auth: true })
   },
+  pendingRegistrations: (beforeId?: number) => {
+    const query = new URLSearchParams({ pending_only: 'true', limit: '25' })
+    if (beforeId !== undefined) query.set('before_id', String(beforeId))
+    return request<{ items: Registration[]; has_more: boolean }>(`/admin/registrations?${query}`, { auth: true })
+  },
   registration: (id: number) => request<Registration>(`/admin/registrations/${id}`, { auth: true }),
   createRegistration: (data: { name: string; phone: string; number_plate: string }) => request<Registration>('/admin/registrations', { method: 'POST', auth: true, body: data }),
   saveScore: (registration_id: number, items: Array<{ score_item_id: number; quantity: number }>) => request<ScoreResponse>('/admin/scores', { method: 'POST', auth: true, body: { registration_id, items } }),
@@ -64,7 +69,7 @@ export const adminApi = {
   deleteScore: (registrationId: number, version: string | null) => request<{ registration_id: number; status: string }>(
     `/admin/scores/${registrationId}${version ? `?expected_version=${encodeURIComponent(version)}` : ''}`, { method: 'DELETE', auth: true }),
   deleteAllScores: (activityId: number, count: number) => request<{ deleted_count: number }>(`/admin/scores?activity_id=${activityId}&expected_count=${count}`, { method: 'DELETE', auth: true }),
-  leaderboard: (offset?: number) => request<Leaderboard>(`/admin/leaderboard${offset === undefined ? '' : `?limit=25&offset=${offset}`}`, { auth: true }),
+  leaderboard: (offset?: number, limit = 25) => request<Leaderboard>(`/admin/leaderboard${offset === undefined ? '' : `?limit=${limit}&offset=${offset}`}`, { auth: true }),
   drawCandidates: () => request<{ threshold: number; items: Array<{ registration_id: number; display_name: string; number_plate: string; score: number }> }>('/admin/draw/candidates', { auth: true }),
   draw: (activityId: number) => request<DrawResult>(`/admin/draw?activity_id=${activityId}`, { method: 'POST', auth: true }),
   drawResult: () => request<DrawResult>('/admin/draw/result', { auth: true }),
@@ -84,7 +89,7 @@ export type MediaAsset = { kind: string; label: string; url: string; object_key?
 export type ScoreDetail = { score_item_id: number; quantity: number; subtotal: number }
 export type Activity = { id: number; slug: string; title: string; description?: string; status: string; challenge_duration_seconds: number; challenge_limit: number; draw_threshold: number; leaderboard_name_mode: string; rules_text?: string; score_items: ScoreItem[]; reward_tiers: RewardTier[]; media_assets: MediaAsset[]; rules_version: string }
 export type Dashboard = { activity: { id: number; title: string; status: string }; registered_count: number; scored_count: number; pending_score_count: number; draw_qualified_count: number; highest_score: number }
-export type Registration = { id: number; activity_id: number; name: string; phone: string; number_plate: string; status: string; score: number | null; score_details?: ScoreDetail[]; score_version: string | null }
+export type Registration = { id: number; activity_id: number; name: string; phone: string; number_plate: string; registered_at: string; status: string; score: number | null; score_details?: ScoreDetail[]; score_version: string | null }
 export type ScoreResponse = { id: number; registration_id: number; total_score: number; reward: { title: string; prize_name: string } | null; details: ScoreDetail[]; version: string }
 export type ScoreSubmission = { activity_id: number; registration_id: number; operation_id: string; expected_version: string | null; rules_version: string; items: Array<{ score_item_id: number; quantity: number }> }
 export type Leaderboard = { entries: Array<{ registration_id: number; rank: number; display_name: string; number_plate: string; name: string; phone: string; score: number; title?: string }>; has_more: boolean }

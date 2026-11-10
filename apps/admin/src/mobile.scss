@@ -37,6 +37,9 @@
   .mobile-stat-strip strong { display: block; font-size: 24px; font-variant-numeric: tabular-nums; }
   .mobile-stat-strip small, .mobile-caption { color: var(--fb-muted); font-size: 14px; }
   .mobile-caption { margin: 4px 0 12px; line-height: 1.45; }
+  .home-ranking { padding: 12px; }
+  .home-ranking header { align-items: center; gap: 6px; margin-bottom: 8px; }
+  .pending-day + .pending-day { margin-top: 12px; }
   .mobile-search { display: grid; gap: 6px; margin-bottom: 12px; }
   .mobile-search > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
   .mobile-search input, .mobile-fields input:not([type='checkbox']), .mobile-fields textarea, .mobile-fields select, .mobile-stepper input {

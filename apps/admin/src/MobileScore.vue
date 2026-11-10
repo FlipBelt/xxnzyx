@@ -37,6 +37,23 @@
       </li>
     </ul>
     <button v-if="hasMore" type="button" class="mobile-link" :disabled="searching" @click="search(true)">查看更多结果</button>
+    <section v-if="!searched && !searching" class="pending-queue" aria-label="待录分名单">
+      <header class="pending-queue-heading"><div><h2>待录分</h2><small>按报名日期 · 北京时间</small></div><button type="button" class="mobile-link" :disabled="pendingLoading" @click="loadPending()">刷新名单</button></header>
+      <p v-if="pendingError" class="mobile-status" role="status">{{ pendingError }}</p>
+      <p v-else-if="pendingLoading && !pendingGroups.length" role="status">正在读取待录分名单…</p>
+      <p v-else-if="!pendingGroups.length" class="mobile-caption">当前没有待录分人员。</p>
+      <section v-for="group in pendingGroups" :key="group.date" class="pending-day">
+        <h3>{{ group.date }}</h3>
+        <ul class="mobile-list">
+          <li v-for="row in group.entries" :key="row.id">
+            <button type="button" class="mobile-list-row" @click="edit(row)">
+              <span><strong>#{{ row.number_plate }}</strong><small>{{ row.name }} · 尾号 {{ row.phone.slice(-4) }}</small></span><span>录分 ›</span>
+            </button>
+          </li>
+        </ul>
+      </section>
+      <button v-if="pendingMore" type="button" class="mobile-link" :disabled="pendingLoading" @click="loadPending(true)">查看更多待录分</button>
+    </section>
   </section>
 
   <section v-else class="mobile-score-editor" aria-label="登记成绩">
@@ -98,10 +115,13 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { adminApi, ApiError, newOperationId, type Activity, type Admin, type Registration, type ScoreResponse, type ScoreSubmission } from './services/api'
 import { scoreDrafts } from './services/scoreDrafts'
+import { usePendingRegistrations } from './services/pendingRegistrations'
 
 const props = defineProps<{ config: Activity; admin: Admin; refreshRules: () => Promise<Activity> }>()
 const emit = defineEmits<{ supplement: [keyword: string]; changed: [] }>()
 const storage = scoreDrafts(props.admin.id, props.config.id)
+const { groups: pendingGroups, loading: pendingLoading, hasMore: pendingMore, error: pendingError,
+  load: loadPending, remove: removePending } = usePendingRegistrations()
 const drafts = ref(storage.list())
 const confirmed = ref<Record<number, string>>({})
 const knownPlates = ref<Record<number, string>>({})
@@ -235,6 +255,8 @@ function showReceipt(row: Registration, score: ScoreResponse, operationId: strin
   drafts.value = storage.list()
   lastSaved.value = { plate: row.number_plate, score, changed: false }
   closeEditor(true)
+  removePending(row.id)
+  void loadPending()
   emit('changed')
   if (recheck) void adminApi.registration(row.id).then((current) => {
     if (active && lastSaved.value?.score.version === score.version) lastSaved.value.changed = current.score_version !== score.version
@@ -337,7 +359,7 @@ async function deleteSelected() {
   try { await ElMessageBox.confirm(`删除 #${row.number_plate} 的成绩？报名资料保留。`, '删除成绩', { type: 'warning', confirmButtonText: '删除成绩', cancelButtonText: '取消' }) }
   catch { return }
   checking.value = true
-  try { await adminApi.deleteScore(row.id, row.score_version); if (active) { closeEditor(true); message.value = '成绩已删除，报名资料已保留'; emit('changed') } }
+  try { await adminApi.deleteScore(row.id, row.score_version); if (active) { closeEditor(true); message.value = '成绩已删除，报名资料已保留'; emit('changed'); void loadPending() } }
   catch (error) { if (active) message.value = errorMessage(error) }
   finally { checking.value = false }
 }
@@ -347,9 +369,10 @@ function connectivityChanged() {
   if (online.value) {
     if (submission.value) void checkReceipt()
     void refreshBackgroundReceipts()
+    if (!selected.value && !searched.value) void loadPending()
   }
 }
-onMounted(() => { window.addEventListener('online', connectivityChanged); window.addEventListener('offline', connectivityChanged) })
+onMounted(() => { window.addEventListener('online', connectivityChanged); window.addEventListener('offline', connectivityChanged); void loadPending() })
 onUnmounted(() => { active = false; window.removeEventListener('online', connectivityChanged); window.removeEventListener('offline', connectivityChanged) })
 defineExpose({ canLeave, edit, find })
 </script>
