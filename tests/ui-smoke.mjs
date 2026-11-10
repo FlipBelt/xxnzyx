@@ -52,6 +52,9 @@ async function assertNarrow(page) {
 }
 async function fixture(page, { initialFailures = 0, loseFirstReceipt = false, mobileAdmin = false } = {}) {
   const state = { activityReads: 0, posts: 0, records: 0, meReads: 0, profileReady: false, expired: false }
+  state.publicActivity = activity
+  state.activityUnavailable = false
+  state.activityUrls = []
   const admin = { id: 1, username: 'fixture-admin', display_name: '本地测试管理员', role: 'admin' }
   const testItems = ['隐藏奖励', '轻薄衣物', '登山杖', '水壶', '耳机', '手机型号', '能量胶', '盐丸'].map((name, index) => ({
     id: index + 1, code: `fixture_${index}`, name, points: index === 3 ? 5 : 2, max_quantity: [null, 2, 1, 1, 1, 1, 20, 20][index]
@@ -75,7 +78,9 @@ async function fixture(page, { initialFailures = 0, loseFirstReceipt = false, mo
     const json = (data, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) })
     if (endpoint === '/activity/current') {
       state.activityReads += 1
-      return state.activityReads <= initialFailures ? json({ detail: '测试网络暂不可用' }, 503) : json(activity)
+      state.activityUrls.push(url.href)
+      return state.activityUnavailable || state.activityReads <= initialFailures
+        ? json({ detail: '测试网络暂不可用' }, 503) : json(state.publicActivity)
     }
     if (endpoint === '/registrations') {
       state.posts += 1
@@ -245,6 +250,68 @@ async function runMobile(browser, engine) {
   await assertNarrow(page)
   await capture(page, engine + '-home')
   checks += 1
+  await context.close()
+}
+async function runRuleSync(browser) {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: 'reduce' })
+  const page = await context.newPage()
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  const state = await fixture(page)
+  const tiers = (cutoff, prize) => [
+    { id: 1, min_score: 0, max_score: cutoff - 1, title: '起步', prize_name: '测试冰巾' },
+    { id: 2, min_score: cutoff, max_score: null, title: '领先', prize_name: prize },
+  ]
+  state.publicActivity = { ...activity, reward_tiers: tiers(50, '旧奖品') }
+  await page.clock.install()
+  await page.goto(origin + '/flipbelt/')
+  await page.getByText('下一步：填写报名', { exact: true }).click()
+  await page.getByPlaceholder('请输入姓名').fill('合成选手')
+  await page.getByPlaceholder('请输入11位手机号').fill('13900000001')
+  await page.getByPlaceholder('请输入本场参赛号码牌').fill('RULES-01')
+  await page.getByText('提交报名并继续', { exact: true }).click()
+  const rulesRead = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith('/activity/current'))
+  await page.getByText('下一步：查看计分与奖励', { exact: true }).click()
+  assert.equal((await rulesRead).status(), 200)
+  await page.getByText('50分以上', { exact: true }).waitFor()
+  assert.equal(state.activityReads, 2)
+  assert.notEqual(state.activityUrls[0], state.activityUrls[1])
+
+  state.publicActivity = { ...activity, reward_tiers: tiers(56, '新奖品') }
+  await page.clock.fastForward(15_000)
+  await page.getByText('56分以上', { exact: true }).waitFor()
+  await page.getByText('0–55分', { exact: true }).waitFor()
+  await page.getByText('新奖品', { exact: true }).waitFor()
+  assert.equal(await page.getByText('50分以上', { exact: true }).count(), 0)
+
+  state.activityUnavailable = true
+  await page.evaluate(() => window.dispatchEvent(new Event('pageshow')))
+  await page.getByText('暂时无法核对最新规则，当前显示上次读取的内容。', { exact: true }).waitFor()
+  assert.equal(await page.getByText('56分以上', { exact: true }).count(), 1)
+  state.activityUnavailable = false
+  state.publicActivity = { ...activity, reward_tiers: [] }
+  await page.getByText('刷新规则', { exact: true }).click()
+  await page.getByText('暂无奖励区间。', { exact: true }).waitFor()
+  assert.equal(await page.getByText('50分以上', { exact: true }).count(), 0)
+
+  state.publicActivity = { ...activity, reward_tiers: tiers(56, '新奖品'), score_items: [
+    { id: 3, code: 'phone_model', name: '后台更名道具', points: 8, max_quantity: 2, is_required: true },
+    { id: 4, code: 'hidden_bonus', name: '隐藏道具', points: 7, max_quantity: 1, is_hidden_bonus: true, appear_at_seconds_remaining: 3 },
+  ] }
+  await page.getByText('下一步：查看挑战规则', { exact: true }).click()
+  await page.getByText('后台更名道具', { exact: true }).waitFor()
+  await page.getByText('8分/个', { exact: true }).waitFor()
+  await page.getByText('必须项 · 最多2个', { exact: true }).waitFor()
+  await page.getByText('最多1个 · 最后3秒出现', { exact: true }).waitFor()
+  await assertNarrow(page)
+
+  await page.goto(origin + '/flipbelt/#/pages/rules/index')
+  await page.getByText('56分以上', { exact: true }).waitFor()
+  state.publicActivity = { ...state.publicActivity, reward_tiers: tiers(60, '独立页更新奖品') }
+  await page.clock.fastForward(15_000)
+  await page.getByText('60分以上', { exact: true }).waitFor()
+  assert.deepEqual(errors, [])
+  checks += 12
   await context.close()
 }
 async function runAdmin(browser) {
@@ -426,7 +493,10 @@ try {
   for (const engine of ['chromium', 'webkit']) {
     const browser = await playwright[engine].launch(engine === 'chromium' ? { channel: 'chrome' } : {})
     try {
-      if (process.env.UI_ADMIN_ONLY !== '1') await runMobile(browser, engine)
+      if (process.env.UI_ADMIN_ONLY !== '1') {
+        await runMobile(browser, engine)
+        await runRuleSync(browser)
+      }
       if (process.env.UI_PARTICIPANT_ONLY !== '1') {
         if (engine === 'chromium') await runAdmin(browser)
         await runMobileAdmin(browser, engine)

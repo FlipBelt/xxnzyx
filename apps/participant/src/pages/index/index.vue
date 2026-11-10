@@ -37,6 +37,11 @@
           <text v-if="step.copy" class="step-copy">{{ step.copy }}</text>
         </view>
 
+        <view v-if="rulesSection && rulesError" class="media-error" role="status">
+          <text>{{ rulesError }}</text>
+          <button role="button" tabindex="0" :disabled="refreshing" @tap.stop="refreshRules" @keydown="activateOnKey($event, refreshRules)">刷新规则</button>
+        </view>
+
         <view class="step-content">
           <view v-if="step.content === 'follow'" class="follow-content">
             <button v-if="me?.registered" class="resume-button" role="button" tabindex="0" @tap.stop="continueRegistration" @keydown="activateOnKey($event, continueRegistration)">继续我的报名</button>
@@ -70,23 +75,24 @@
           <view v-else-if="step.content === 'rule-one'" class="media-content">
             <view class="rule-table rule-table--items">
               <view class="rule-table__row rule-table__row--head"><text>道具</text><text>分值</text><text>数量上限</text></view>
-              <view v-for="item in scoreRuleRows" :key="item.code" class="rule-table__row">
+              <view v-for="item in scoreRuleRows" :key="item.id" class="rule-table__row">
                 <text>{{ item.name }}</text>
                 <text>{{ item.points }}分/个</text>
-                <text v-if="item.required" class="rule-table__pill">必须项</text>
-                <text v-else>{{ item.limit }}</text>
+                <text :class="{ 'rule-table__pill': item.is_required }">{{ scoreConditions(item) }}</text>
               </view>
             </view>
+            <text v-if="!scoreRuleRows.length" class="state-copy">暂无计分道具。</text>
           </view>
 
           <view v-else-if="step.content === 'rule-two'" class="media-content">
             <view class="rule-table rule-table--rewards">
               <view class="rule-table__row rule-table__row--head"><text>最终得分</text><text>即时奖励</text></view>
-              <view v-for="reward in rewardRuleRows" :key="reward.minScore" class="rule-table__row">
-                <text>{{ reward.scoreLabel }}</text>
-                <text>{{ reward.prizeName }}</text>
+              <view v-for="reward in rewardRuleRows" :key="reward.id" class="rule-table__row">
+                <text>{{ rewardRange(reward) }}</text>
+                <text>{{ reward.prize_name }}</text>
               </view>
             </view>
+            <text v-if="!rewardRuleRows.length" class="state-copy">暂无奖励区间。</text>
           </view>
 
           <view v-else-if="step.content === 'challenge'" class="challenge-content">
@@ -164,6 +170,7 @@
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import Taro from '@tarojs/taro'
 import { api, hasToken, mediaUrl, saveToken, type Activity, type Me } from '../../services/api'
+import { rewardRange, scoreConditions, useActivityRulesRefresh } from '../../services/activityRules'
 import brandLogo from '../../../../shared/branding/flipbelt.svg'
 import groupQrImage from '../../assets/group-qr-wechat-20260911.png'
 import douyinLogo from '../../assets/platform-douyin.png'
@@ -208,6 +215,8 @@ const pointerSwipeActive = ref(false)
 const form = reactive({ name: '', phone: '', number_plate: '' })
 
 const step = computed(() => steps[current.value])
+const rulesSection = computed(() => step.value.content === 'rule-one' || step.value.content === 'rule-two' ? step.value.content : null)
+const { refreshing, rulesError, refreshRules } = useActivityRulesRefresh(activity, rulesSection)
 const duration = computed(() => activity.value?.challenge_duration_seconds ?? 40)
 const canGoBack = computed(() => current.value >= 3)
 const transitionClass = computed(() => transitionDirection.value ? `transition-${transitionDirection.value}` : '')
@@ -242,52 +251,10 @@ const videoUrl = computed(() => {
   return resolved ? `${resolved}${resolved.includes('?') ? '&' : '?'}v=20260908-optimized` : ''
 })
 const videoPosterUrl = computed(() => resolvedMedia('demo_video_poster_portrait'))
-const fallbackScoreRuleRows = [
-  { code: 'hidden_bonus', name: '隐藏加码道具', points: 6, limit: '最后5秒出现', required: false },
-  { code: 'light_clothing', name: '轻薄衣物', points: 6, limit: '最多2件', required: false },
-  { code: 'trekking_pole', name: '登山杖', points: 6, limit: '', required: true },
-  { code: 'water_bottle', name: '水壶', points: 5, limit: '', required: true },
-  { code: 'earphones', name: '耳机', points: 3, limit: '', required: true },
-  { code: 'phone_model', name: '手机', points: 3, limit: '', required: true },
-  { code: 'energy_gel', name: '能量胶', points: 2, limit: '最多20个', required: false },
-  { code: 'salt_pills', name: '盐丸', points: 1, limit: '最多20个', required: false },
-]
-const fallbackRewardRuleRows = [
-  { minScore: 50, scoreLabel: '50分以上', prizeName: '运动短袜' },
-  { minScore: 41, scoreLabel: '41–49分', prizeName: '小袋鼠钥匙扣' },
-  { minScore: 31, scoreLabel: '31–40分', prizeName: '飞比特限定编织袋' },
-  { minScore: 1, scoreLabel: '1–30分', prizeName: '冷感冰巾' },
-]
-const scoreRuleRows = computed(() => {
-  const rows = activity.value?.score_items?.length
-    ? [...activity.value.score_items].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)).map((item) => ({
-      code: item.code,
-      name: item.code === 'phone_model' ? '手机' : item.code === 'salt_pills' ? '盐丸' : item.name,
-      points: item.points,
-      limit: item.is_hidden_bonus
-        ? `最后${item.appear_at_seconds_remaining ?? 5}秒出现`
-        : item.max_quantity == null
-          ? ''
-          : `最多${item.max_quantity}${item.code === 'light_clothing' ? '件' : '个'}`,
-      required: item.is_required,
-    }))
-    : fallbackScoreRuleRows
-  return rows
-})
-const rewardRuleRows = computed(() => {
-  const rows = activity.value?.reward_tiers?.length
-    ? [...activity.value.reward_tiers].sort((a, b) => b.min_score - a.min_score).map((tier) => ({
-      minScore: tier.min_score,
-      scoreLabel: tier.max_score == null
-        ? `${tier.min_score}分以上`
-        : tier.min_score === 0 && tier.max_score === 30
-          ? '1–30分'
-          : `${tier.min_score}–${tier.max_score}分`,
-      prizeName: tier.prize_name,
-    }))
-    : fallbackRewardRuleRows
-  return rows
-})
+const scoreRuleRows = computed(() => [...(activity.value?.score_items ?? [])]
+  .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)))
+const rewardRuleRows = computed(() => [...(activity.value?.reward_tiers ?? [])]
+  .sort((a, b) => b.min_score - a.min_score))
 
 function activateOnKey(event: KeyboardEvent, action: () => void | Promise<void>) {
   if (event.key !== 'Enter' && event.key !== ' ') return
