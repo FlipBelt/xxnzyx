@@ -22,11 +22,15 @@ const server = createServer(async (request, response) => {
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 const origin = 'http://127.0.0.1:' + server.address().port
+const groupTiers = (limit) => [
+  { id: 1, min_score: 0, max_score: limit, title: '基础档', prize_name: '测试奖品' },
+  { id: 2, min_score: limit + 1, max_score: null, title: '最高档', prize_name: '测试奖品' },
+]
 const activity = {
   id: 1, slug: 'local-ui-fixture', title: '本地回归活动', status: 'active',
   challenge_duration_seconds: 40, challenge_limit: 1, draw_threshold: 45,
   leaderboard_name_mode: 'plate_masked_name', rules_text: '本地合成测试规则',
-  media_assets: [], score_items: [], reward_tiers: []
+  media_assets: [], score_items: [], reward_tiers: groupTiers(49)
 }
 const screenshots = process.env.UI_SCREENSHOTS_DIR
 if (screenshots) await mkdir(screenshots, { recursive: true })
@@ -55,6 +59,7 @@ async function fixture(page, { initialFailures = 0, loseFirstReceipt = false, mo
   state.publicActivity = activity
   state.activityUnavailable = false
   state.activityUrls = []
+  state.profileScore = 50
   const admin = { id: 1, username: 'fixture-admin', display_name: '本地测试管理员', role: 'admin' }
   const testItems = ['隐藏奖励', '轻薄衣物', '登山杖', '水壶', '耳机', '手机型号', '能量胶', '盐丸'].map((name, index) => ({
     id: index + 1, code: `fixture_${index}`, name, points: index === 3 ? 5 : 2, max_quantity: [null, 2, 1, 1, 1, 1, 20, 20][index]
@@ -91,7 +96,7 @@ async function fixture(page, { initialFailures = 0, loseFirstReceipt = false, mo
     if (endpoint === '/me') {
       state.meReads += 1
       return state.profileReady
-        ? json({ registered: true, registration_id: 7, name: '本地测试选手', number_plate: 'LOCAL-07', score: 50, draw_qualified: true, reward: { title: '测试等级', prize_name: '测试奖品' } })
+        ? json({ registered: true, registration_id: 7, name: '本地测试选手', number_plate: 'LOCAL-07', score: state.profileScore, draw_qualified: true, reward: { title: '测试等级', prize_name: '测试奖品' } })
         : json({ detail: '测试资料读取失败' }, 503)
     }
     if (endpoint === '/admin/login') {
@@ -225,15 +230,64 @@ async function runMobile(browser, engine) {
       await page.getByText('刷新我的成绩', { exact: true }).click()
       await page.getByText('成绩加载失败，请联系工作人员。', { exact: true }).waitFor()
       state.profileReady = true
+      if (width === 390) {
+        await page.clock.install()
+        state.profileScore = 60
+        state.publicActivity = { ...activity, reward_tiers: groupTiers(60) }
+      }
+      const rulesRead = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/activity/current'))
       await page.getByText('刷新我的成绩', { exact: true }).click()
       await page.getByText('我的挑战成绩', { exact: true }).waitFor()
       await assertStop('成绩')
-      assert.match(await page.locator('.result-score').innerText(), /50/)
+      assert.ok((await page.locator('.result-score').innerText()).includes(String(state.profileScore)))
       const animation = await page.locator('.result-score-panel').evaluate(node => getComputedStyle(node).animationName)
       assert.equal(animation, reduceMotion ? 'none' : 'score-arrival')
-      await page.waitForFunction(() => document.querySelector('img.draw-qr')?.naturalWidth > 0)
+      await (await rulesRead).finished()
+      const groupDialog = page.getByRole('dialog', { name: '加入微信群' })
+      if (width === 390) {
+        const refreshScore = async (score) => {
+          state.profileScore = score
+          await page.getByText('刷新成绩', { exact: true }).click()
+          await page.locator('.result-score').getByText(String(score), { exact: true }).waitFor()
+        }
+        assert.equal(await groupDialog.count(), 0)
+        await refreshScore(61)
+        await groupDialog.getByText(/超过 60 分/).waitFor()
+        await page.waitForFunction(() => document.querySelector('.group-qr-image img')?.naturalWidth > 0)
+        state.publicActivity = { ...activity, reward_tiers: groupTiers(70) }
+        await page.clock.fastForward(15_000)
+        await groupDialog.waitFor({ state: 'hidden' })
+        await refreshScore(70)
+        assert.equal(await groupDialog.count(), 0)
+        await refreshScore(71)
+        await groupDialog.getByText(/超过 70 分/).waitFor()
+        await groupDialog.getByRole('button', { name: '关闭加群二维码' }).click()
+        await groupDialog.waitFor({ state: 'hidden' })
+        await page.getByRole('button', { name: '查看加群二维码' }).click()
+        await groupDialog.waitFor()
+        state.publicActivity = { ...activity, reward_tiers: [{ id: 3, min_score: 0, max_score: null, title: '单档', prize_name: '测试奖品' }] }
+        await page.clock.fastForward(15_000)
+        await groupDialog.waitFor({ state: 'hidden' })
+        assert.equal(await page.getByRole('button', { name: '查看加群二维码' }).count(), 0)
+        checks += 8
+      } else {
+        await groupDialog.waitFor()
+      }
       await assertNarrow(page)
       if (width === 390) await capture(page, engine + '-race-result')
+      if (width === 390) {
+        state.profileScore = 70
+        state.publicActivity = { ...activity, reward_tiers: groupTiers(70) }
+        const directRulesRead = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/activity/current'))
+        await page.goto(origin + '/flipbelt/#/pages/me/index')
+        await (await directRulesRead).finished()
+        await page.getByText('70 分', { exact: true }).waitFor()
+        assert.equal(await groupDialog.count(), 0)
+        state.profileScore = 71
+        await page.getByText('刷新我的成绩', { exact: true }).click()
+        await groupDialog.getByText(/超过 70 分/).waitFor()
+        checks += 2
+      }
       checks += 10
     }
     assert.deepEqual(errors, [])

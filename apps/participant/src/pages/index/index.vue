@@ -126,7 +126,7 @@
                 <b>{{ me.display_title }}</b>
               </view>
             </view>
-            <view v-if="drawQualified" class="draw-content"><text>已达到 {{ activity?.draw_threshold }} 分抽奖门槛，请扫码进入微信群。</text><img class="draw-qr" :src="groupQrImageUrl" alt="微信群二维码" /></view>
+            <GroupQr v-if="me?.registered && me.score != null" :score="me.score" :activity-slug="activity?.slug" />
           </view>
         </view>
 
@@ -172,11 +172,10 @@ import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import Taro from '@tarojs/taro'
 import { api, hasToken, mediaUrl, saveToken, type Activity, type Me } from '../../services/api'
 import { rewardRange, scoreConditions, useActivityRulesRefresh } from '../../services/activityRules'
+import GroupQr from '../../components/GroupQr.vue'
 import brandLogo from '../../../../shared/branding/flipbelt.svg'
-import groupQrImage from '../../assets/group-qr-wechat-20260911.png'
 import douyinLogo from '../../assets/platform-douyin.png'
 import taobaoLogo from '../../assets/platform-taobao.png'
-const groupQrImageUrl = `${groupQrImage}?v=20260911-qr-render-1`
 
 const platforms = [
   { id: 'xiaohongshu', label: '小红书', icon: '' },
@@ -241,12 +240,6 @@ const platformLinks: Record<FollowPlatform, string> = {
   douyin: 'https://v.douyin.com/kf1tSYkABlc/',
   taobao: 'https://shop.m.taobao.com/shop/shopIndex.htm?shop_navi=index&shop_id=299566488&bc_fl_src=tbsms_crm_3322551300_deliver$3017163071300_0',
 }
-const drawQualified = computed(() => {
-  if (me.value?.draw_qualified === true) return true
-  const score = Number(me.value?.score)
-  const threshold = Number(activity.value?.draw_threshold)
-  return Number.isFinite(score) && Number.isFinite(threshold) && score >= threshold
-})
 const videoUrl = computed(() => {
   const resolved = mediaUrl(findMedia('demo_video_portrait') || findMedia('demo_video') || '/assets/袋鼠裤-20260908.mp4')
   return resolved ? `${resolved}${resolved.includes('?') ? '&' : '?'}v=20260908-optimized` : ''
@@ -548,8 +541,6 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .result-score small { flex: none; font-size: max(30rpx, 15PX); }
 .result-highlight { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; gap: 24rpx; padding: 20rpx 0; border-bottom: 1rpx solid var(--fb-border); }
 .result-highlight b { font-size: max(32rpx, 16PX); line-height: 1.45; overflow-wrap: anywhere; }
-.draw-content { margin-top: 28rpx; color: var(--fb-muted); font-size: max(26rpx, 13PX); line-height: 1.65; text-align: center; }
-.draw-qr { display: block; width: 100%; max-width: 380rpx; height: auto; aspect-ratio: 1; margin: 20rpx auto 0; object-fit: contain; }
 .step-actions { display: grid; margin-top: 26rpx; gap: 14rpx; }
 .next-button, .resume-button { width: 100%; min-width: 0; min-height: 48PX; margin: 0; padding: 18rpx 24rpx; border: 1rpx solid var(--fb-ink); border-radius: 100rpx; background: var(--fb-accent); color: var(--fb-ink); font-size: max(30rpx, 15PX); font-weight: 750; line-height: 1.5; white-space: normal; transition: transform 160ms var(--race-ease-out); }
 .next-button:active:not([disabled]), .resume-button:active { transform: scale(.97); }
