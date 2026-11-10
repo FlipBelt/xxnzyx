@@ -39,7 +39,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 }
 
 export const api = {
-  currentActivity: () => request<Activity>('/activity/current'),
+  currentActivity: () => request<Activity>(`/activity/current?_=${Date.now()}`),
   leaderboard: () => request<Leaderboard>('/leaderboard'),
   me: () => request<Me>('/me', { auth: true }),
   register: (data: RegisterPayload) => request<RegistrationResult>('/registrations', { method: 'POST', data }),
@@ -60,13 +60,13 @@ export type Activity = {
   status: string
   challenge_duration_seconds: number
   draw_threshold: number
-  rules_text?: string
+  rules_text?: string | null
   score_items: ScoreItem[]
   reward_tiers: RewardTier[]
   media_assets: MediaAsset[]
 }
-export type ScoreItem = { id: number; code: string; name: string; points: number; max_quantity?: number; is_required: boolean; is_hidden_bonus: boolean; appear_at_seconds_remaining?: number; display_order?: number }
-export type RewardTier = { id: number; min_score: number; max_score?: number; title: string; prize_name: string; display_order?: number }
+export type ScoreItem = { id: number; code: string; name: string; points: number; max_quantity?: number | null; is_required: boolean; is_hidden_bonus: boolean; appear_at_seconds_remaining?: number | null; display_order?: number }
+export type RewardTier = { id: number; min_score: number; max_score?: number | null; title: string; prize_name: string; display_order?: number }
 export type MediaAsset = { kind: string; label: string; url: string; mime_type?: string }
 export type Leaderboard = { activity: string; entries: Array<{ rank: number; display_name: string; score: number; title?: string }> }
 export type Me = { registered: boolean; registration_id?: number; name?: string; number_plate?: string; status?: string; score?: number; rank?: number; official_rank?: number; display_rank?: number; display_title?: string; reward?: { title: string; prize_name: string }; draw_qualified?: boolean; details?: Array<{ item_name: string; points: number; quantity: number; subtotal: number }> }

@@ -5,3 +5,4 @@ html, body, page { min-width: 0; max-width: 100%; background: var(--fb-canvas); 
 body { margin: 0; }
 button, input, textarea { font-family: var(--fb-font); }
 button::after { border: 0; }
+.published-rule-text { display: block; font-size: max(26rpx, 13PX); line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
