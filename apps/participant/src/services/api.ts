@@ -60,7 +60,7 @@ export type Activity = {
   status: string
   challenge_duration_seconds: number
   draw_threshold: number
-  rules_text?: string
+  rules_text?: string | null
   score_items: ScoreItem[]
   reward_tiers: RewardTier[]
   media_assets: MediaAsset[]

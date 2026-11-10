@@ -13,7 +13,8 @@
       </view>
       <view class="memphis-card">
         <text class="section-label">挑战规则</text>
-        <view v-for="(rule, index) in rules" :key="rule" class="rule-row"><text>{{ index + 1 }}. {{ rule }}</text></view>
+        <text v-if="activity.rules_text?.trim()" class="published-rule-text">{{ activity.rules_text }}</text>
+        <text v-else class="memphis-subtitle">暂无规则说明。</text>
       </view>
       <view class="memphis-card memphis-card--yellow">
         <text class="section-label">计分方式</text>
@@ -44,5 +45,4 @@ import { rewardRange, scoreConditions, useActivityRulesRefresh } from '../../ser
 const activity = ref<Activity>()
 const { refreshing, rulesError, refreshRules } = useActivityRulesRefresh(activity, ref('rules'))
 const video = computed(() => activity.value?.media_assets.find((asset) => asset.kind === 'video'))
-const rules = ['40秒内完成装载，超时不计分。', '所有道具必须完全装入袋鼠裤。', '挑战结束后道具掉落不计分。', '工作人员现场核算有效道具数量。', '按最终积分领取对应奖励，并参与排行榜。']
 </script>

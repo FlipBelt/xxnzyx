@@ -73,6 +73,7 @@
           </view>
 
           <view v-else-if="step.content === 'rule-one'" class="media-content">
+            <text v-if="activity?.rules_text?.trim()" class="published-rule-text">{{ activity.rules_text }}</text>
             <view class="rule-table rule-table--items">
               <view class="rule-table__row rule-table__row--head"><text>道具</text><text>分值</text><text>数量上限</text></view>
               <view v-for="item in scoreRuleRows" :key="item.id" class="rule-table__row">

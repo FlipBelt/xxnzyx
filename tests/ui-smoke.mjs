@@ -294,11 +294,14 @@ async function runRuleSync(browser) {
   await page.getByText('暂无奖励区间。', { exact: true }).waitFor()
   assert.equal(await page.getByText('50分以上', { exact: true }).count(), 0)
 
-  state.publicActivity = { ...activity, reward_tiers: tiers(56, '新奖品'), score_items: [
+  const publishedRuleText = '由后台保存的说明。\n现场以工作人员核对为准。'
+  state.publicActivity = { ...activity, rules_text: publishedRuleText, reward_tiers: tiers(56, '新奖品'), score_items: [
     { id: 3, code: 'phone_model', name: '后台更名道具', points: 8, max_quantity: 2, is_required: true },
     { id: 4, code: 'hidden_bonus', name: '隐藏道具', points: 7, max_quantity: 1, is_hidden_bonus: true, appear_at_seconds_remaining: 3 },
   ] }
   await page.getByText('下一步：查看挑战规则', { exact: true }).click()
+  await page.locator('.published-rule-text').filter({ hasText: '由后台保存的说明。' }).waitFor()
+  assert.equal(await page.locator('.published-rule-text').innerText(), publishedRuleText)
   await page.getByText('后台更名道具', { exact: true }).waitFor()
   await page.getByText('8分/个', { exact: true }).waitFor()
   await page.getByText('必须项 · 最多2个', { exact: true }).waitFor()
@@ -307,11 +310,13 @@ async function runRuleSync(browser) {
 
   await page.goto(origin + '/flipbelt/#/pages/rules/index')
   await page.getByText('56分以上', { exact: true }).waitFor()
-  state.publicActivity = { ...state.publicActivity, reward_tiers: tiers(60, '独立页更新奖品') }
+  assert.equal(await page.locator('.published-rule-text').innerText(), publishedRuleText)
+  state.publicActivity = { ...state.publicActivity, rules_text: '更新后的公示文案。', reward_tiers: tiers(60, '独立页更新奖品') }
   await page.clock.fastForward(15_000)
   await page.getByText('60分以上', { exact: true }).waitFor()
+  assert.equal(await page.locator('.published-rule-text').innerText(), '更新后的公示文案。')
   assert.deepEqual(errors, [])
-  checks += 12
+  checks += 15
   await context.close()
 }
 async function runAdmin(browser) {
